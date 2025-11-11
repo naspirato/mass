@@ -1307,6 +1307,88 @@
             return html;
         }
         
+        function pluralizeRu(count, one, few, many) {
+            const n = Math.abs(count) % 100;
+            const n1 = n % 10;
+            if (n > 10 && n < 20) return many;
+            if (n1 > 1 && n1 < 5) return few;
+            if (n1 === 1) return one;
+            return many;
+        }
+
+        function summarizeDetectorResults(detectorResults) {
+            if (!Array.isArray(detectorResults)) {
+                return [];
+            }
+            return detectorResults.map(det => {
+                const events = Array.isArray(det.events) ? det.events : [];
+                let positive = 0;
+                let negative = 0;
+                events.forEach(evt => {
+                    const eventType = String(evt?.event_type || '').toLowerCase();
+                    if (eventType.includes('improvement')) {
+                        positive += 1;
+                    } else if (eventType.includes('degradation')) {
+                        negative += 1;
+                    }
+                });
+                return {
+                    id: det.detector_id || det.detector_label || 'detector',
+                    label: det.detector_label || det.detector_id || 'Детектор',
+                    type: det.detector_type || '',
+                    total: events.length,
+                    positive,
+                    negative
+                };
+            });
+        }
+
+        function renderDetectorSummaryList(detectorSummaries, options = {}) {
+            if (!Array.isArray(detectorSummaries) || detectorSummaries.length === 0) {
+                return '';
+            }
+
+            const {
+                heading = 'Детекторы',
+                wrapperStyle = 'margin-top: 8px; font-size: 11px; color: #444;',
+                showType = false
+            } = options;
+
+            const sorted = detectorSummaries
+                .map(det => ({
+                    ...det,
+                    total: det?.total ?? 0,
+                    positive: det?.positive ?? 0,
+                    negative: det?.negative ?? 0,
+                    label: det?.label || det?.id || 'Детектор',
+                    type: det?.type || ''
+                }))
+                .sort((a, b) => b.total - a.total);
+
+            let html = `<div style="${wrapperStyle}">`;
+            html += `<div style="font-weight: 600; margin-bottom: 4px;">${heading}</div>`;
+
+            sorted.forEach(det => {
+                const totalText = `${det.total} ${pluralizeRu(det.total, 'событие', 'события', 'событий')}`;
+                const details = [];
+                if (det.positive > 0) {
+                    details.push(`🟢 ${det.positive}`);
+                }
+                if (det.negative > 0) {
+                    details.push(`🔴 ${det.negative}`);
+                }
+                const detailsText = details.length ? ` (${details.join(', ')})` : '';
+                const labelText = showType && det.type ? `${det.label} · ${det.type}` : det.label;
+                html += `<div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 2px;">`;
+                html += `<span>${labelText}</span>`;
+                html += `<span>${totalText}${detailsText}</span>`;
+                html += `</div>`;
+            });
+
+            html += '</div>';
+            return html;
+        }
+
         function generateVisualizationGallery(results) {
             // Extract contexts from results (from first variant that has contexts_info)
             let allContexts = [];
@@ -1329,6 +1411,7 @@
                     const metricEventsCount = typeof vizItem === 'object' && vizItem.events_count !== undefined ? vizItem.events_count : 0;
                     const metricPositiveEvents = typeof vizItem === 'object' && vizItem.positive_events_count !== undefined ? vizItem.positive_events_count : 0;
                     const metricNegativeEvents = typeof vizItem === 'object' && vizItem.negative_events_count !== undefined ? vizItem.negative_events_count : 0;
+                    const detectorResults = typeof vizItem === 'object' && Array.isArray(vizItem.detector_results) ? vizItem.detector_results : [];
                     
                     // Extract context hash from filename
                     const filename = vizPath.split('/').pop();
@@ -1369,15 +1452,16 @@
                     // Only store one file per variant, context, and metric
                     if (!contextData.metrics.get(metricKey)[variantIndex]) {
                         contextData.metrics.get(metricKey)[variantIndex] = [{
-                            path: vizPath,
-                            variantIndex: variantIndex,
-                            variant: result.variant || {},
-                            metricName: metricName,
-                            eventsCount: metricEventsCount,
-                            positiveEventsCount: metricPositiveEvents,
-                            negativeEventsCount: metricNegativeEvents
-                        }];
-                    }
+                              path: vizPath,
+                              variantIndex,
+                              variant: result.variant || {},
+                              metricName,
+                              eventsCount: metricEventsCount,
+                              positiveEventsCount: metricPositiveEvents,
+                              negativeEventsCount: metricNegativeEvents,
+                              detectorResults
+                          }];
+                      }
                 });
             });
             
@@ -1423,6 +1507,25 @@
                 // Now each context has one visualization file (not per metric)
                 // Show visualizations for each variant
                 
+                    const contextInfo = allContexts.find(info => info.context_hash === ctx.context_hash);
+                    if (contextInfo && Array.isArray(contextInfo.detectors) && contextInfo.detectors.length > 0) {
+                        const aggregatedSummary = contextInfo.detectors.map(det => ({
+                            id: det.id,
+                            label: det.label,
+                            total: det.events_count || 0,
+                            positive: det.positive_events_count || 0,
+                            negative: det.negative_events_count || 0
+                        }));
+                        const aggregatedHtml = renderDetectorSummaryList(aggregatedSummary, {
+                            heading: 'Сводка детекторов',
+                            wrapperStyle: 'margin: 10px 0 18px 0; padding: 10px; background: #f4f6ff; border-radius: 6px; font-size: 11px; color: #2f3c8f;',
+                            showType: false
+                        });
+                        if (aggregatedHtml) {
+                            html += aggregatedHtml;
+                        }
+                    }
+                    
                 // Group by metrics first, then show variants for each metric
                 ctx.metrics.forEach((metricVizMap, metricName) => {
                     // Get all variants for this metric
@@ -1494,6 +1597,13 @@
                                     html += `<div style="margin-top: 6px; font-size: 12px; font-weight: 500; color: #333;">${eventsText}</div>`;
                                 } else {
                                     html += `<div style="margin-top: 6px; font-size: 12px; font-weight: 500; color: #666;">⚪ Нет событий</div>`;
+                                }
+                                const detectorSummaryHtml = renderDetectorSummaryList(
+                                    summarizeDetectorResults(viz.detectorResults || []),
+                                    { wrapperStyle: 'margin-top: 8px; font-size: 11px; color: #444;' }
+                                );
+                                if (detectorSummaryHtml) {
+                                    html += detectorSummaryHtml;
                                 }
                                 html += `<div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">`;
                                 html += `<a href="${viz.path}" target="_blank" onclick="event.stopPropagation();" style="padding: 4px 8px; background: #2196F3; color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">🔗 Открыть</a>`;
@@ -1603,7 +1713,8 @@
                     const metricEventsCount = typeof vizItem === 'object' && vizItem.events_count !== undefined ? vizItem.events_count : 0;
                     const metricPositiveEvents = typeof vizItem === 'object' && vizItem.positive_events_count !== undefined ? vizItem.positive_events_count : 0;
                     const metricNegativeEvents = typeof vizItem === 'object' && vizItem.negative_events_count !== undefined ? vizItem.negative_events_count : 0;
-                    
+                    const detectorResults = typeof vizItem === 'object' && Array.isArray(vizItem.detector_results) ? vizItem.detector_results : [];
+
                     // Extract context hash from filename
                     const filename = vizPath.split('/').pop();
                     const parts = filename.replace('.html', '').split('_');
@@ -1634,12 +1745,13 @@
                         if (!contextData.metrics.get(metricKey)[variantIndex]) {
                             contextData.metrics.get(metricKey)[variantIndex] = [{
                                 path: vizPath,
-                                variantIndex: variantIndex,
+                                variantIndex,
                                 variant: result.variant || {},
-                                metricName: metricName,
+                                metricName,
                                 eventsCount: metricEventsCount,
                                 positiveEventsCount: metricPositiveEvents,
-                                negativeEventsCount: metricNegativeEvents
+                                negativeEventsCount: metricNegativeEvents,
+                                detectorResults
                             }];
                         }
                     }
@@ -1651,6 +1763,22 @@
             const contextData = contextsMap.get(contextHash);
             if (contextData) {
                 graphsHtml += `<h4 style="margin: 0 0 15px 0; color: #667eea; font-size: 16px;">${contextData.context_display}</h4>`;
+
+                const aggregatedSummary = (selectedContext.detectors || []).map(det => ({
+                    id: det.id,
+                    label: det.label,
+                    total: det.events_count || 0,
+                    positive: det.positive_events_count || 0,
+                    negative: det.negative_events_count || 0
+                }));
+                const aggregatedHtml = renderDetectorSummaryList(aggregatedSummary, {
+                    heading: 'Сводка детекторов по контексту',
+                    wrapperStyle: 'margin: 10px 0 20px 0; padding: 12px; background: #eef2ff; border-radius: 6px; font-size: 12px; color: #25316d;',
+                    showType: false
+                });
+                if (aggregatedHtml) {
+                    graphsHtml += aggregatedHtml;
+                }
                 
                 // Group by metrics first, then show variants for each metric
                 contextData.metrics.forEach((metricVizMap, metricName) => {
@@ -1721,6 +1849,13 @@
                                 graphsHtml += `<div style="margin-top: 6px; font-size: 12px; font-weight: 500; color: #333;">${eventsText}</div>`;
                             } else {
                                 graphsHtml += `<div style="margin-top: 6px; font-size: 12px; font-weight: 500; color: #666;">⚪ Нет событий</div>`;
+                            }
+                            const detectorSummaryHtml = renderDetectorSummaryList(
+                                summarizeDetectorResults(viz.detectorResults || []),
+                                { wrapperStyle: 'margin-top: 8px; font-size: 11px; color: #444;' }
+                            );
+                            if (detectorSummaryHtml) {
+                                graphsHtml += detectorSummaryHtml;
                             }
                             graphsHtml += `<div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">`;
                             graphsHtml += `<a href="${viz.path}" target="_blank" onclick="event.stopPropagation();" style="padding: 4px 8px; background: #2196F3; color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">🔗 Открыть</a>`;

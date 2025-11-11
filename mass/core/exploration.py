@@ -410,7 +410,56 @@ class ExplorationRunner:
                         
                         # Get events count for this specific context + metric combination
                         context_metric_key = f"{full_context_hash}_{metric_name}"
-                        metric_events = events_by_context_metric.get(context_metric_key, {'total': 0, 'positive': 0, 'negative': 0})
+                        metric_events = events_by_context_metric.get(
+                            context_metric_key,
+                            {'total': 0, 'positive': 0, 'negative': 0}
+                        )
+                        detector_results = []
+                        try:
+                            data_json_path = f.with_name(f.stem + '_data.json')
+                            if data_json_path.exists():
+                                with open(data_json_path, 'r', encoding='utf-8') as data_file:
+                                    viz_payload = json.load(data_file)
+                                detector_results = viz_payload.get('detector_results', []) or []
+                                if detector_results:
+                                    total_events = 0
+                                    positive_events = 0
+                                    negative_events = 0
+                                    for det in detector_results:
+                                        events_list = det.get('events', [])
+                                        if isinstance(events_list, list):
+                                            total_events += len(events_list)
+                                            for evt in events_list:
+                                                if not isinstance(evt, dict):
+                                                    continue
+                                                event_type = str(evt.get('event_type', '')).lower()
+                                                if 'improvement' in event_type:
+                                                    positive_events += 1
+                                                elif 'degradation' in event_type:
+                                                    negative_events += 1
+                                    metric_events = {
+                                        'total': total_events,
+                                        'positive': positive_events,
+                                        'negative': negative_events
+                                    }
+                                else:
+                                    payload_events = viz_payload.get('events')
+                                    if isinstance(payload_events, list):
+                                        metric_events = {
+                                            'total': len(payload_events),
+                                            'positive': sum(
+                                                1 for evt in payload_events
+                                                if isinstance(evt, dict)
+                                                and 'improvement' in str(evt.get('event_type', '')).lower()
+                                            ),
+                                            'negative': sum(
+                                                1 for evt in payload_events
+                                                if isinstance(evt, dict)
+                                                and 'degradation' in str(evt.get('event_type', '')).lower()
+                                            )
+                                        }
+                        except Exception:
+                            detector_results = []
                         
                         visualization_files.append({
                             'path': f"/api/report/{f.name}",
@@ -418,7 +467,8 @@ class ExplorationRunner:
                             'context_hash': full_context_hash,
                             'events_count': metric_events['total'],
                             'positive_events_count': metric_events['positive'],
-                            'negative_events_count': metric_events['negative']
+                            'negative_events_count': metric_events['negative'],
+                            'detector_results': detector_results
                         })
                 else:
                     # Last resort: search all possible paths for any event files with job prefix
@@ -463,27 +513,90 @@ class ExplorationRunner:
                                     context_metric_key = f"{full_context_hash}_{metric_name}"
                                     metric_events = events_by_context_metric.get(context_metric_key, {'total': 0, 'positive': 0, 'negative': 0})
                                     
+                                    detector_results = []
+                                    try:
+                                        data_json_path = f.with_name(f.stem + '_data.json')
+                                        if data_json_path.exists():
+                                            with open(data_json_path, 'r', encoding='utf-8') as data_file:
+                                                viz_payload = json.load(data_file)
+                                            detector_results = viz_payload.get('detector_results', []) or []
+                                            if detector_results:
+                                                total_events = 0
+                                                positive_events = 0
+                                                negative_events = 0
+                                                for det in detector_results:
+                                                    events_list = det.get('events', [])
+                                                    if isinstance(events_list, list):
+                                                        total_events += len(events_list)
+                                                        for evt in events_list:
+                                                            if not isinstance(evt, dict):
+                                                                continue
+                                                            event_type = str(evt.get('event_type', '')).lower()
+                                                            if 'improvement' in event_type:
+                                                                positive_events += 1
+                                                            elif 'degradation' in event_type:
+                                                                negative_events += 1
+                                                metric_events = {
+                                                    'total': total_events,
+                                                    'positive': positive_events,
+                                                    'negative': negative_events
+                                                }
+                                            else:
+                                                payload_events = viz_payload.get('events')
+                                                if isinstance(payload_events, list):
+                                                    metric_events = {
+                                                        'total': len(payload_events),
+                                                        'positive': sum(
+                                                            1 for evt in payload_events
+                                                            if isinstance(evt, dict)
+                                                            and 'improvement' in str(evt.get('event_type', '')).lower()
+                                                        ),
+                                                        'negative': sum(
+                                                            1 for evt in payload_events
+                                                            if isinstance(evt, dict)
+                                                            and 'degradation' in str(evt.get('event_type', '')).lower()
+                                                        )
+                                                    }
+                                    except Exception:
+                                        detector_results = []
+                                    
                                     visualization_files.append({
                                         'path': f"/api/report/{f.name}",
                                         'metric_name': metric_name,
                                         'context_hash': full_context_hash,
                                         'events_count': metric_events['total'],
                                         'positive_events_count': metric_events['positive'],
-                                        'negative_events_count': metric_events['negative']
+                                        'negative_events_count': metric_events['negative'],
+                                        'detector_results': detector_results
                                     })
                                 break
             
             # Extract context information from events, threshold files, and visualization files
             contexts_info = []
             from collections import defaultdict
-            
+
+            def _make_detector_entry():
+                return {
+                    'id': None,
+                    'label': None,
+                    'total': 0,
+                    'positive': 0,
+                    'negative': 0
+                }
+
+            def _make_context_entry():
+                return {
+                    'count': 0,
+                    'positive': 0,
+                    'negative': 0,
+                    'context_json': '{}',
+                    'metrics': set(),
+                    'data_points': 0,  # Actual number of data points from source data
+                    'detectors': defaultdict(_make_detector_entry)
+                }
+
             # First, extract contexts from threshold files and count actual data points from source data
-            contexts_by_hash = defaultdict(lambda: {
-                'count': 0, 
-                'context_json': '{}', 
-                'metrics': set(),
-                'data_points': 0  # Actual number of data points from source data
-            })
+            contexts_by_hash = defaultdict(_make_context_entry)
             
             # Try to count actual data points from source data file
             data_points_by_context = {}
@@ -616,9 +729,28 @@ class ExplorationRunner:
                     context_hash = event.get('context_hash', '')
                     context_json = event.get('context_json', '{}')
                     metric_name = event.get('metric_name', '')
+                    event_type = str(event.get('event_type', '')).lower()
+                    detector_id = event.get('detector_id') or 'unknown_detector'
+                    detector_label = event.get('detector_label') or detector_id
                     
                     if context_hash:
                         contexts_by_hash[context_hash]['count'] += 1
+                        if 'improvement' in event_type:
+                            contexts_by_hash[context_hash]['positive'] += 1
+                        elif 'degradation' in event_type:
+                            contexts_by_hash[context_hash]['negative'] += 1
+                        
+                        detector_entry = contexts_by_hash[context_hash]['detectors'][detector_id]
+                        if detector_entry['id'] is None:
+                            detector_entry['id'] = detector_id
+                        if not detector_entry['label']:
+                            detector_entry['label'] = detector_label
+                        detector_entry['total'] += 1
+                        if 'improvement' in event_type:
+                            detector_entry['positive'] += 1
+                        elif 'degradation' in event_type:
+                            detector_entry['negative'] += 1
+                        
                         # Use context_json from events if threshold file didn't have it
                         if not contexts_by_hash[context_hash]['context_json'] or contexts_by_hash[context_hash]['context_json'] == '{}':
                             contexts_by_hash[context_hash]['context_json'] = context_json
@@ -657,6 +789,17 @@ class ExplorationRunner:
                     if not context_str:
                         context_str = f"Context {context_hash[:8]}"
                     
+                    detector_list = []
+                    for det_id, det_stats in info['detectors'].items():
+                        detector_list.append({
+                            'id': det_id,
+                            'label': det_stats.get('label') or det_id,
+                            'events_count': det_stats.get('total', 0),
+                            'positive_events_count': det_stats.get('positive', 0),
+                            'negative_events_count': det_stats.get('negative', 0)
+                        })
+                    detector_list.sort(key=lambda x: x['events_count'], reverse=True)
+                    
                     contexts_info.append({
                         'context_hash': context_hash,
                         'context_hash_short': context_hash[:8],
@@ -664,7 +807,10 @@ class ExplorationRunner:
                         'context_display': context_str,
                         'metrics': sorted(list(info['metrics'])),
                         'events_count': info['count'],
+                        'positive_events_count': info['positive'],
+                        'negative_events_count': info['negative'],
                         'viz_count': info['data_points'],  # Actual number of data points
+                        'detectors': detector_list,
                     })
                 except Exception:
                     continue
