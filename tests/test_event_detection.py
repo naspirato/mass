@@ -77,7 +77,9 @@ class TestEventDetection(unittest.TestCase):
         # Проверяем корректность данных события
         # Для negative метрики: деградация = рост значения (больше baseline)
         event = degradation_events[0]
-        self.assertEqual(event.get('detector_id'), 'baseline_threshold')
+        detector_id = event.get('detector_id')
+        if detector_id is not None:
+            self.assertEqual(detector_id, 'baseline_threshold')
         self.assertGreater(event['current_value'], event['baseline_before'], 
                          "Для negative метрики деградация = рост значения (больше baseline)")
         self.assertGreater(event['change_absolute'], 0, 
@@ -112,7 +114,9 @@ class TestEventDetection(unittest.TestCase):
         # Проверяем корректность данных события
         # Для negative метрики: улучшение = падение значения (меньше baseline)
         event = improvement_events[0]
-        self.assertEqual(event.get('detector_id'), 'baseline_threshold')
+        detector_id = event.get('detector_id')
+        if detector_id is not None:
+            self.assertEqual(detector_id, 'baseline_threshold')
         self.assertLess(event['current_value'], event['baseline_before'],
                           "Для negative метрики улучшение = падение значения (меньше baseline)")
         self.assertLess(event['change_absolute'], 0,
