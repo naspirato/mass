@@ -337,9 +337,15 @@ def save_config():
         data = request.json
         filename = data.get('filename')
         content = data.get('content')
+        config = data.get('config')  # Support saving from config dict
+        
+        # If config dict is provided, convert to YAML
+        if config and not content:
+            import yaml
+            content = yaml.dump(config, default_flow_style=False, allow_unicode=True, sort_keys=False)
         
         if not filename or not content:
-            return jsonify({'error': 'filename and content are required'}), 400
+            return jsonify({'error': 'filename and content (or config) are required'}), 400
         
         # Security: only allow YAML files
         if not filename.endswith('.yaml') and not filename.endswith('.yml'):
@@ -357,6 +363,7 @@ def save_config():
         
         return jsonify({
             'success': True,
+            'filename': filename,
             'path': str(config_path.relative_to(PROJECT_ROOT))
         })
         
@@ -585,6 +592,87 @@ def run_exploration():
         return jsonify({
             'success': False,
             'error': error_msg
+        }), 500
+
+
+@app.route('/api/explore/auto_tune', methods=['POST'])
+def run_auto_tune():
+    """Автоматический подбор параметров и обнаружение событий"""
+    try:
+        data = request.get_json()
+        
+        # Получаем конфигурацию
+        config_content = data.get('config')
+        if not config_content:
+            return jsonify({
+                'success': False,
+                'error': 'Configuration is required'
+            }), 400
+        
+        # Сохраняем временный конфиг
+        import tempfile
+        import yaml
+        
+        temp_config_file = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.yaml', delete=False, dir=os.path.join(PROJECT_ROOT, 'configs')
+        )
+        yaml.dump(yaml.safe_load(config_content), temp_config_file, default_flow_style=False, allow_unicode=True)
+        temp_config_path = temp_config_file.name
+        temp_config_file.close()
+        
+        try:
+            # Получаем опциональные параметры
+            data_file = data.get('data_file')
+            tuning_methods = data.get('tuning_methods', ['adaptive'])  # По умолчанию adaptive
+            compare_methods = data.get('compare_methods', False)  # Сравнение методов
+            
+            # Resolve data_file path if provided
+            if data_file:
+                if not os.path.isabs(data_file):
+                    data_file = os.path.join(PROJECT_ROOT, data_file)
+                # Security: ensure path is within project root
+                try:
+                    data_file = os.path.abspath(data_file)
+                    project_root_abs = os.path.abspath(PROJECT_ROOT)
+                    if not data_file.startswith(project_root_abs):
+                        return jsonify({
+                            'success': False,
+                            'error': 'Invalid data_file path'
+                        }), 400
+                except Exception as e:
+                    return jsonify({
+                        'success': False,
+                        'error': f'Invalid data_file path: {str(e)}'
+                    }), 400
+            
+            # Создаем exploration runner
+            from mass.core.exploration import ExplorationRunner
+            runner = ExplorationRunner(temp_config_path, data_file=data_file)
+            
+            # Запускаем auto-tune
+            results = runner.run_auto_tune(
+                dry_run=True,
+                tuning_methods=tuning_methods,
+                compare_methods=compare_methods
+            )
+            
+            return jsonify({
+                'success': True,
+                'results': results
+            })
+        finally:
+            # Удаляем временный конфиг
+            try:
+                os.unlink(temp_config_path)
+            except:
+                pass
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
         }), 500
 
 

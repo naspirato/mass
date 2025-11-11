@@ -9,6 +9,8 @@ import sys
 import yaml
 import copy
 import json
+import pandas as pd
+import numpy as np
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
@@ -52,6 +54,14 @@ class ExplorationRunner:
                 - vary_window_size: Vary window_size
                 - vary_sensitivity: Vary sensitivity
                 - vary_adaptive_threshold: Vary adaptive_threshold
+                - vary_min_absolute_change: Vary min_absolute_change
+                - vary_min_relative_change: Vary min_relative_change
+                - vary_hysteresis_points: Vary hysteresis_points
+                - vary_min_data_points: Vary min_data_points
+                - vary_min_event_duration: Vary min_event_duration_minutes
+                - vary_detect_types: Vary event types to detect
+                - vary_track_new_contexts: Vary track_new_contexts
+                - vary_track_disappeared_contexts: Vary track_disappeared_contexts
         
         Returns:
             List of variant configuration dictionaries
@@ -64,12 +74,41 @@ class ExplorationRunner:
         sensitivities = [1.5, 2.0, 2.5] if variant_settings.get('vary_sensitivity', False) else [None]
         adaptive_thresholds = [True, False] if variant_settings.get('vary_adaptive_threshold', False) else [None]
         
+        # New parameter values
+        min_absolute_changes = [0, 5, 10] if variant_settings.get('vary_min_absolute_change', False) else [None]
+        min_relative_changes = [0.0, 0.05, 0.1] if variant_settings.get('vary_min_relative_change', False) else [None]
+        hysteresis_pointss = [1, 2, 3] if variant_settings.get('vary_hysteresis_points', False) else [None]
+        min_data_pointss = [3, 5, 10] if variant_settings.get('vary_min_data_points', False) else [None]
+        min_event_durations = [15, 30, 60] if variant_settings.get('vary_min_event_duration', False) else [None]
+        
+        # Event types to detect
+        detect_types_variants = [
+            ['degradation_start', 'improvement_start'],
+            ['degradation_start'],
+            ['improvement_start']
+        ] if variant_settings.get('vary_detect_types', False) else [None]
+        
+        # Context tracking
+        track_new_contexts_variants = [True, False] if variant_settings.get('vary_track_new_contexts', False) else [None]
+        track_disappeared_contexts_variants = [True, False] if variant_settings.get('vary_track_disappeared_contexts', False) else [None]
+        
         # Get base values from config
         base_analytics = self.base_config.get('analytics', {})
+        base_events = self.base_config.get('events', {})
+        base_context_tracking = self.base_config.get('context_tracking', {})
+        
         base_baseline_method = base_analytics.get('baseline_method', 'rolling_mean')
         base_window_size = base_analytics.get('window_size', 7)
         base_sensitivity = base_analytics.get('sensitivity', 2.0)
         base_adaptive_threshold = base_analytics.get('adaptive_threshold', True)
+        base_min_absolute_change = base_analytics.get('min_absolute_change', 0)
+        base_min_relative_change = base_analytics.get('min_relative_change', 0.0)
+        base_hysteresis_points = base_analytics.get('hysteresis_points', 2)
+        base_min_data_points = base_analytics.get('min_data_points', 3)
+        base_min_event_duration = base_events.get('min_event_duration_minutes', 30)
+        base_detect = base_events.get('detect', ['degradation_start', 'improvement_start'])
+        base_track_new = base_context_tracking.get('track_new_contexts', False)
+        base_track_disappeared = base_context_tracking.get('track_disappeared_contexts', False)
         
         # Generate all combinations
         variant_id = 0
@@ -77,35 +116,90 @@ class ExplorationRunner:
             for window_size in window_sizes:
                 for sensitivity in sensitivities:
                     for adaptive_threshold in adaptive_thresholds:
-                        # Create variant config
-                        variant_config = copy.deepcopy(self.base_config)
-                        
-                        # Apply variant values (use base if None)
-                        variant_config['analytics']['baseline_method'] = baseline_method if baseline_method is not None else base_baseline_method
-                        variant_config['analytics']['window_size'] = window_size if window_size is not None else base_window_size
-                        variant_config['analytics']['sensitivity'] = sensitivity if sensitivity is not None else base_sensitivity
-                        variant_config['analytics']['adaptive_threshold'] = adaptive_threshold if adaptive_threshold is not None else base_adaptive_threshold
-                        
-                        # Update job name to include variant info
-                        job_name = variant_config.get('job', {}).get('name', 'analytics_job')
-                        variant_config['job']['name'] = f"{job_name}_explore_{variant_id}"
-                        
-                        # Store variant metadata
-                        variant_metadata = {
-                            'id': variant_id,
-                            'baseline_method': variant_config['analytics']['baseline_method'],
-                            'window_size': variant_config['analytics']['window_size'],
-                            'sensitivity': variant_config['analytics']['sensitivity'],
-                            'adaptive_threshold': variant_config['analytics']['adaptive_threshold'],
-                        }
-                        
-                        variants.append({
-                            'config': variant_config,
-                            'metadata': variant_metadata,
-                            'id': variant_id
-                        })
-                        
-                        variant_id += 1
+                        for min_absolute_change in min_absolute_changes:
+                            for min_relative_change in min_relative_changes:
+                                for hysteresis_points in hysteresis_pointss:
+                                    for min_data_points in min_data_pointss:
+                                        for min_event_duration in min_event_durations:
+                                            for detect_types in detect_types_variants:
+                                                for track_new in track_new_contexts_variants:
+                                                    for track_disappeared in track_disappeared_contexts_variants:
+                                                        # Create variant config
+                                                        variant_config = copy.deepcopy(self.base_config)
+                                                        
+                                                        # Apply variant values (use base if None)
+                                                        variant_config['analytics']['baseline_method'] = baseline_method if baseline_method is not None else base_baseline_method
+                                                        variant_config['analytics']['window_size'] = window_size if window_size is not None else base_window_size
+                                                        variant_config['analytics']['sensitivity'] = sensitivity if sensitivity is not None else base_sensitivity
+                                                        variant_config['analytics']['adaptive_threshold'] = adaptive_threshold if adaptive_threshold is not None else base_adaptive_threshold
+                                                        
+                                                        # New analytics parameters
+                                                        if min_absolute_change is not None:
+                                                            variant_config['analytics']['min_absolute_change'] = min_absolute_change
+                                                        elif 'min_absolute_change' not in variant_config['analytics']:
+                                                            variant_config['analytics']['min_absolute_change'] = base_min_absolute_change
+                                                        
+                                                        if min_relative_change is not None:
+                                                            variant_config['analytics']['min_relative_change'] = min_relative_change
+                                                        elif 'min_relative_change' not in variant_config['analytics']:
+                                                            variant_config['analytics']['min_relative_change'] = base_min_relative_change
+                                                        
+                                                        if hysteresis_points is not None:
+                                                            variant_config['analytics']['hysteresis_points'] = hysteresis_points
+                                                        elif 'hysteresis_points' not in variant_config['analytics']:
+                                                            variant_config['analytics']['hysteresis_points'] = base_hysteresis_points
+                                                        
+                                                        if min_data_points is not None:
+                                                            variant_config['analytics']['min_data_points'] = min_data_points
+                                                        elif 'min_data_points' not in variant_config['analytics']:
+                                                            variant_config['analytics']['min_data_points'] = base_min_data_points
+                                                        
+                                                        # Events parameters
+                                                        if min_event_duration is not None:
+                                                            variant_config['events']['min_event_duration_minutes'] = min_event_duration
+                                                        elif 'min_event_duration_minutes' not in variant_config['events']:
+                                                            variant_config['events']['min_event_duration_minutes'] = base_min_event_duration
+                                                        
+                                                        if detect_types is not None:
+                                                            variant_config['events']['detect'] = detect_types
+                                                        
+                                                        # Context tracking
+                                                        if track_new is not None or track_disappeared is not None:
+                                                            if 'context_tracking' not in variant_config:
+                                                                variant_config['context_tracking'] = {}
+                                                            if track_new is not None:
+                                                                variant_config['context_tracking']['track_new_contexts'] = track_new
+                                                            if track_disappeared is not None:
+                                                                variant_config['context_tracking']['track_disappeared_contexts'] = track_disappeared
+                                                        
+                                                        # Update job name
+                                                        job_name = variant_config.get('job', {}).get('name', 'analytics_job')
+                                                        variant_config['job']['name'] = f"{job_name}_explore_{variant_id}"
+                                                        
+                                                        # Store variant metadata
+                                                        variant_metadata = {
+                                                            'id': variant_id,
+                                                            'baseline_method': variant_config['analytics']['baseline_method'],
+                                                            'window_size': variant_config['analytics']['window_size'],
+                                                            'sensitivity': variant_config['analytics']['sensitivity'],
+                                                            'adaptive_threshold': variant_config['analytics']['adaptive_threshold'],
+                                                            'min_absolute_change': variant_config['analytics'].get('min_absolute_change', base_min_absolute_change),
+                                                            'min_relative_change': variant_config['analytics'].get('min_relative_change', base_min_relative_change),
+                                                            'hysteresis_points': variant_config['analytics'].get('hysteresis_points', base_hysteresis_points),
+                                                            'min_data_points': variant_config['analytics'].get('min_data_points', base_min_data_points),
+                                                            'min_event_duration_minutes': variant_config['events'].get('min_event_duration_minutes', base_min_event_duration),
+                                                            'detect': variant_config['events'].get('detect', base_detect),
+                                                            'track_new_contexts': variant_config.get('context_tracking', {}).get('track_new_contexts', base_track_new),
+                                                            'track_disappeared_contexts': variant_config.get('context_tracking', {}).get('track_disappeared_contexts', base_track_disappeared),
+                                                        }
+                                                        
+                                                        variants.append({
+                                                            'config': variant_config,
+                                                            'metadata': variant_metadata,
+                                                            'id': variant_id
+                                                        })
+                                                        
+                                                        variant_id += 1
         
         # If no variants were generated (all None), create at least one with base config
         if not variants:
@@ -120,6 +214,14 @@ class ExplorationRunner:
                     'window_size': base_window_size,
                     'sensitivity': base_sensitivity,
                     'adaptive_threshold': base_adaptive_threshold,
+                    'min_absolute_change': base_min_absolute_change,
+                    'min_relative_change': base_min_relative_change,
+                    'hysteresis_points': base_hysteresis_points,
+                    'min_data_points': base_min_data_points,
+                    'min_event_duration_minutes': base_min_event_duration,
+                    'detect': base_detect,
+                    'track_new_contexts': base_track_new,
+                    'track_disappeared_contexts': base_track_disappeared,
                 },
                 'id': 0
             })
@@ -906,4 +1008,809 @@ class ExplorationRunner:
         results.sort(key=lambda r: r.get('variant', {}).get('id', 0))
         
         return results
+    
+    def run_auto_tune(
+        self,
+        dry_run: bool = True,
+        tuning_methods: Optional[List[str]] = None,
+        compare_methods: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Автоматический подбор параметров и обнаружение событий
+        
+        Args:
+            dry_run: Whether to run in dry-run mode
+            tuning_methods: Список методов подбора ('adaptive', 'ml', 'hybrid').
+                          Если None, используется ['adaptive']
+            compare_methods: Если True, сравнивает результаты разных методов
+        
+        Returns:
+            Dictionary with results: events, optimal_params, report_path, comparison (if compare_methods=True)
+        """
+        from .adaptive_parameter_tuner import (
+            create_parameter_tuner,
+            AdaptiveParameterTuner,
+            MLParameterTuner,
+            HybridParameterTuner
+        )
+        from .data_access import DataAccess
+        from .preprocessing import Preprocessing
+        from .baseline_calculator import BaselineCalculator
+        from .event_detector import EventDetector
+        
+        if tuning_methods is None:
+            tuning_methods = ['adaptive']
+        
+        print("=" * 80)
+        print("AUTO-TUNE MODE: Automatic Parameter Tuning")
+        print("=" * 80)
+        
+        # Очищаем старые файлы визуализации перед запуском (как в исследовании)
+        print("\nStep 0: Cleaning old visualization files...")
+        output_dir = self.base_config.get('output', {}).get('output_dir', 'dry_run_output')
+        base_path = Path(self.base_config_path).resolve()
+        project_root = base_path.parent
+        if project_root.name == 'configs':
+            project_root = project_root.parent
+        
+        # Find output directory
+        possible_output_paths = [
+            project_root / output_dir,
+            project_root / 'mass' / 'ui' / output_dir,
+            Path.cwd() / output_dir,
+            Path.cwd() / 'mass' / 'ui' / output_dir,
+            base_path.parent / output_dir,
+            base_path.parent / 'mass' / 'ui' / output_dir,
+        ]
+        
+        job_name = self.base_config.get('job', {}).get('name', 'auto_tune')
+        job_prefix = job_name.rsplit('_explore_', 1)[0] if '_explore_' in job_name else job_name
+        
+        # Clean old files from all possible output directories
+        cleaned_count = 0
+        for output_path in possible_output_paths:
+            if output_path.exists() and output_path.is_dir():
+                # Remove old visualization files, events, thresholds, and reports with matching prefix
+                for pattern in ['*_event_*.html', '*_events_*.json', '*_thresholds_*.csv', '*_summary_*.html']:
+                    for old_file in output_path.glob(pattern):
+                        if job_prefix in old_file.name:
+                            try:
+                                old_file.unlink()
+                                cleaned_count += 1
+                            except Exception as e:
+                                print(f"  ⚠ Could not delete {old_file.name}: {e}")
+        
+        if cleaned_count > 0:
+            print(f"  ✓ Cleaned {cleaned_count} old files from previous autotune runs")
+        else:
+            print(f"  ✓ No old files to clean")
+        
+        # Шаг 1: Загрузить данные
+        print("\nStep 1: Loading data...")
+        print(f"  DEBUG: self.data_file = {self.data_file}")
+        if self.data_file:
+            print(f"  DEBUG: os.path.exists(self.data_file) = {os.path.exists(self.data_file)}")
+            if os.path.exists(self.data_file):
+                print(f"  DEBUG: File size = {os.path.getsize(self.data_file)} bytes")
+        
+        job = AnalyticsJob(self.base_config_path, dry_run=dry_run, data_file=self.data_file)
+        data_access = job.data_access
+        preprocessing = job.preprocessing
+        
+        # Загружаем все данные (используем сохраненные данные если указаны)
+        if self.data_file and os.path.exists(self.data_file):
+            print(f"  ✓ Loading from saved data file: {self.data_file}")
+            df_all = data_access.load_data_from_file(self.data_file)
+        else:
+            if self.data_file:
+                print(f"  ⚠ Warning: data_file specified but not found: {self.data_file}")
+                print("  → Falling back to loading from data source...")
+            else:
+                print("  → Loading from data source (no data_file specified)...")
+            df_all = data_access.load_measurements()
+        df_cleaned = preprocessing.clean_data(df_all, remove_outliers=True)
+        grouped_data = preprocessing.group_by_context(df_cleaned)
+        
+        print(f"Loaded {len(grouped_data)} context×metric combinations")
+        
+        # Шаг 2: Создаем тюнеры
+        tuners = {}
+        for method in tuning_methods:
+            tuners[method] = create_parameter_tuner(method)
+            print(f"  Initialized {method} tuner")
+        
+        # Шаг 3: Анализируем каждый контекст и подбираем параметры
+        print("\nStep 2: Analyzing contexts and tuning parameters...")
+        print(f"  compare_methods = {compare_methods}")
+        context_results = {}
+        all_events = []
+        all_baselines = []
+        visualization_data = []  # Собираем данные для визуализации
+        all_processed_contexts = []  # Сохраняем все обработанные контексты для формирования списка
+        
+        for group_key, group_df in grouped_data.items():
+            # Извлекаем метрику и контекст
+            metric_name = group_key[0] if isinstance(group_key, tuple) else group_key
+            # Используем правильный метод из Preprocessing, который учитывает, что первый элемент - метрика
+            context_values = preprocessing.extract_context_from_group_key(group_key)
+            
+            # Вычисляем context_hash для визуализации
+            context_hash = preprocessing.compute_context_hash(context_values)
+            
+            # Конвертируем numpy типы в стандартные Python типы для JSON сериализации
+            context_values_serializable = {}
+            for key, value in context_values.items():
+                if isinstance(value, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+                    context_values_serializable[key] = int(value)
+                elif isinstance(value, (np.floating, np.float64, np.float32, np.float16)):
+                    context_values_serializable[key] = float(value)
+                elif isinstance(value, (pd.Timestamp, pd.Timedelta)):
+                    context_values_serializable[key] = str(value)
+                elif hasattr(value, 'item'):  # другие numpy types
+                    try:
+                        context_values_serializable[key] = value.item()
+                    except (AttributeError, ValueError):
+                        context_values_serializable[key] = str(value)
+                else:
+                    context_values_serializable[key] = value
+            
+            context_json = json.dumps(context_values_serializable, sort_keys=True)
+            
+            # Сохраняем информацию о контексте для формирования списка
+            all_processed_contexts.append({
+                'context_key': str(group_key),
+                'context_hash': context_hash,
+                'context_json': context_json,
+                'metric_name': metric_name,
+                'context_values': context_values
+            })
+            
+            # Создаем временной ряд
+            series = preprocessing.prepare_time_series(group_df)
+            
+            # Сохраняем контекст даже если данных недостаточно (для списка контекстов)
+            # Но пропускаем обработку если данных мало
+            if len(series) < 3:
+                print(f"  Skipping {group_key}: insufficient data ({len(series)} points)")
+                # Контекст уже сохранен в all_processed_contexts выше
+                continue
+            
+            # Анализируем характеристики данных (один раз для всех методов)
+            primary_tuner = tuners[tuning_methods[0]]
+            characteristics = primary_tuner.analyze_characteristics(series)
+            
+            # Получаем направление метрики
+            metric_direction = self.base_config.get('metric_direction', {}).get(
+                metric_name,
+                self.base_config.get('metric_direction', {}).get('default', 'negative')
+            )
+            
+            # Подбираем параметры каждым методом (с обработкой ошибок)
+            tuning_results = {}
+            tuning_errors = {}  # Сохраняем ошибки для каждого метода
+            for method_name, tuner in tuners.items():
+                try:
+                    tuning_result = tuner.suggest_parameters(
+                        characteristics, metric_name, metric_direction, str(group_key)
+                    )
+                    tuning_results[method_name] = tuning_result
+                except Exception as e:
+                    import traceback
+                    error_msg = f"{str(e)}"
+                    tuning_errors[method_name] = error_msg
+                    print(f"    ⚠ Error in {method_name} tuner for {group_key}: {error_msg}")
+                    # Продолжаем с другими методами
+            
+            # Выбираем лучший результат (или используем все для сравнения)
+            if compare_methods:
+                # Сериализуем characteristics (dataclass -> dict)
+                characteristics_dict = {
+                    'coefficient_of_variation': characteristics.coefficient_of_variation,
+                    'volatility': characteristics.volatility,
+                    'trend_strength': characteristics.trend_strength,
+                    'seasonality_strength': characteristics.seasonality_strength,
+                    'outlier_ratio': characteristics.outlier_ratio,
+                    'data_density': characteristics.data_density,
+                    'baseline_stability': characteristics.baseline_stability,
+                    'mean_value': characteristics.mean_value,
+                    'std_value': characteristics.std_value,
+                    'min_value': characteristics.min_value,
+                    'max_value': characteristics.max_value,
+                    'data_points': characteristics.data_points,
+                }
+                
+                # Сериализуем tuning_results (dataclass -> dict)
+                tuning_results_dict = {}
+                for method_name, tuning_result in tuning_results.items():
+                    tuning_results_dict[method_name] = {
+                        'parameters': tuning_result.parameters,
+                        'confidence': tuning_result.confidence,
+                        'method': tuning_result.method,
+                        'characteristics': {
+                            'coefficient_of_variation': tuning_result.characteristics.coefficient_of_variation,
+                            'volatility': tuning_result.characteristics.volatility,
+                            'trend_strength': tuning_result.characteristics.trend_strength,
+                            'seasonality_strength': tuning_result.characteristics.seasonality_strength,
+                            'outlier_ratio': tuning_result.characteristics.outlier_ratio,
+                            'data_density': tuning_result.characteristics.data_density,
+                            'baseline_stability': tuning_result.characteristics.baseline_stability,
+                            'mean_value': tuning_result.characteristics.mean_value,
+                            'std_value': tuning_result.characteristics.std_value,
+                            'min_value': tuning_result.characteristics.min_value,
+                            'max_value': tuning_result.characteristics.max_value,
+                            'data_points': tuning_result.characteristics.data_points,
+                        },
+                        'reasoning': tuning_result.reasoning,
+                    }
+                
+                # Сохраняем все результаты для сравнения
+                context_results[group_key] = {
+                    'characteristics': characteristics_dict,
+                    'tuning_results': tuning_results_dict,
+                    'events_by_method': {},
+                    'baselines_by_method': {}
+                }
+                
+                # Запускаем обнаружение для каждого метода
+                for method_name, tuning_result in tuning_results.items():
+                    context_config = copy.deepcopy(self.base_config)
+                    context_config['analytics'].update(tuning_result.parameters)
+                    
+                    baseline_calc = BaselineCalculator(context_config)
+                    baseline_result = baseline_calc.compute_baseline_and_thresholds(series)
+                    
+                    event_detector = EventDetector(context_config)
+                    events = event_detector.detect_events(series, baseline_result, metric_name=metric_name)
+                    
+                    # Сериализуем события для сравнения методов
+                    events_serializable = []
+                    for event in events:
+                        event_serializable = {}
+                        for key, value in event.items():
+                            if isinstance(value, pd.Series):
+                                event_serializable[key] = value.tolist()
+                            elif isinstance(value, (pd.Timestamp, pd.Timedelta)):
+                                event_serializable[key] = str(value)
+                            elif hasattr(value, 'item'):  # numpy types
+                                try:
+                                    event_serializable[key] = value.item()
+                                except (AttributeError, ValueError):
+                                    event_serializable[key] = float(value) if isinstance(value, (int, float)) else str(value)
+                            else:
+                                event_serializable[key] = value
+                        # Добавляем информацию о методе для сравнения
+                        event_serializable['tuning_method'] = method_name
+                        event_serializable['context_hash'] = context_hash
+                        event_serializable['metric_name'] = metric_name
+                        events_serializable.append(event_serializable)
+                    
+                    # Сериализуем baseline_result для сравнения методов
+                    baseline_result_serializable = {
+                        'baseline_value': float(baseline_result.get('baseline_value', 0)) if baseline_result.get('baseline_value') is not None else None,
+                        'upper_threshold': float(baseline_result.get('upper_threshold', 0)) if baseline_result.get('upper_threshold') is not None else None,
+                        'lower_threshold': float(baseline_result.get('lower_threshold', 0)) if baseline_result.get('lower_threshold') is not None else None,
+                        'baseline_method': baseline_result.get('baseline_method'),
+                        'window_size': baseline_result.get('window_size'),
+                        'sensitivity': float(baseline_result.get('sensitivity', 0)) if baseline_result.get('sensitivity') is not None else None,
+                        'adaptive_threshold': baseline_result.get('adaptive_threshold', False),
+                        'statistics': baseline_result.get('statistics', {})
+                    }
+                    
+                    context_results[group_key]['events_by_method'][method_name] = events_serializable
+                    context_results[group_key]['baselines_by_method'][method_name] = baseline_result_serializable
+                    
+                    # Сохраняем данные для визуализации для КАЖДОГО метода при compare_methods
+                    visualization_data.append({
+                        'metric_name': metric_name,
+                        'context_hash': context_hash,
+                        'context_json': context_json,
+                        'series': series,
+                        'baseline_result': baseline_result,
+                        'events': events,
+                        'tuning_method': method_name,
+                        'tuning_confidence': tuning_result.confidence,
+                        'tuning_errors': tuning_errors,  # Добавляем информацию об ошибках
+                    })
+                    print(f"    [DEBUG] Added visualization data for {metric_name}, context_hash={context_hash[:8]}, method={method_name}")
+            else:
+                # Используем первый метод (или можно выбрать лучший по confidence)
+                if not tuning_results:
+                    # Если все методы упали с ошибкой, пропускаем этот контекст
+                    print(f"  ⚠ Skipping {group_key}: all tuning methods failed")
+                    print(f"    Errors: {tuning_errors}")
+                    continue
+                
+                best_method = max(tuning_results.keys(), key=lambda m: tuning_results[m].confidence)
+                best_result = tuning_results[best_method]
+                
+                # Создаем конфигурацию с оптимальными параметрами
+                context_config = copy.deepcopy(self.base_config)
+                context_config['analytics'].update(best_result.parameters)
+                
+                # Вычисляем baseline
+                baseline_calc = BaselineCalculator(context_config)
+                baseline_result = baseline_calc.compute_baseline_and_thresholds(series)
+                
+                # Обнаруживаем события
+                event_detector = EventDetector(context_config)
+                events = event_detector.detect_events(series, baseline_result, metric_name=metric_name)
+                
+                # Сохраняем результаты (сериализуем события)
+                for event in events:
+                    # Сериализуем event (убираем любые Series/numpy объекты)
+                    event_serializable = {}
+                    for key, value in event.items():
+                        if isinstance(value, pd.Series):
+                            event_serializable[key] = value.tolist()
+                        elif isinstance(value, (pd.Timestamp, pd.Timedelta)):
+                            event_serializable[key] = str(value)
+                        elif hasattr(value, 'item'):  # numpy types
+                            try:
+                                event_serializable[key] = value.item()
+                            except (AttributeError, ValueError):
+                                event_serializable[key] = float(value) if isinstance(value, (int, float)) else str(value)
+                        else:
+                            event_serializable[key] = value
+                    
+                    # Сериализуем optimal_params (может содержать Series/numpy типы)
+                    optimal_params_serializable = {}
+                    for key, value in best_result.parameters.items():
+                        if isinstance(value, pd.Series):
+                            optimal_params_serializable[key] = value.tolist()
+                        elif isinstance(value, (pd.Timestamp, pd.Timedelta)):
+                            optimal_params_serializable[key] = str(value)
+                        elif hasattr(value, 'item'):  # numpy types
+                            try:
+                                optimal_params_serializable[key] = value.item()
+                            except (AttributeError, ValueError):
+                                optimal_params_serializable[key] = float(value) if isinstance(value, (int, float)) else str(value)
+                        else:
+                            optimal_params_serializable[key] = value
+                    
+                    event_serializable['context_key'] = str(group_key)
+                    event_serializable['context_hash'] = context_hash  # Добавляем context_hash для сопоставления
+                    event_serializable['context_json'] = context_json  # Добавляем context_json для отображения
+                    event_serializable['metric_name'] = metric_name  # Добавляем metric_name для сопоставления
+                    event_serializable['optimal_params'] = optimal_params_serializable
+                    event_serializable['tuning_method'] = best_method
+                    event_serializable['tuning_confidence'] = best_result.confidence
+                    all_events.append(event_serializable)
+                
+                # Сериализуем baseline_result (убираем Series объекты)
+                baseline_result_serializable = {
+                    'baseline_value': float(baseline_result.get('baseline_value', 0)) if baseline_result.get('baseline_value') is not None else None,
+                    'upper_threshold': float(baseline_result.get('upper_threshold', 0)) if baseline_result.get('upper_threshold') is not None else None,
+                    'lower_threshold': float(baseline_result.get('lower_threshold', 0)) if baseline_result.get('lower_threshold') is not None else None,
+                    'baseline_method': baseline_result.get('baseline_method'),
+                    'window_size': baseline_result.get('window_size'),
+                    'sensitivity': float(baseline_result.get('sensitivity', 0)) if baseline_result.get('sensitivity') is not None else None,
+                    'adaptive_threshold': baseline_result.get('adaptive_threshold', False),
+                    'statistics': baseline_result.get('statistics', {})
+                }
+                
+                # Сериализуем optimal_params для baselines
+                optimal_params_serializable = {}
+                for key, value in best_result.parameters.items():
+                    if isinstance(value, pd.Series):
+                        optimal_params_serializable[key] = value.tolist()
+                    elif isinstance(value, (pd.Timestamp, pd.Timedelta)):
+                        optimal_params_serializable[key] = str(value)
+                    elif hasattr(value, 'item'):  # numpy types
+                        try:
+                            optimal_params_serializable[key] = value.item()
+                        except (AttributeError, ValueError):
+                            optimal_params_serializable[key] = float(value) if isinstance(value, (int, float)) else str(value)
+                    else:
+                        optimal_params_serializable[key] = value
+                
+                all_baselines.append({
+                    'context_key': str(group_key),
+                    'baseline_result': baseline_result_serializable,
+                    'optimal_params': optimal_params_serializable,
+                    'tuning_method': best_method,
+                    'tuning_confidence': best_result.confidence,
+                    'reasoning': best_result.reasoning,
+                })
+                
+                # Сохраняем данные для визуализации
+                visualization_data.append({
+                    'metric_name': metric_name,
+                    'context_hash': context_hash,
+                    'context_json': context_json,
+                    'series': series,
+                    'baseline_result': baseline_result,
+                    'events': events,
+                    'tuning_method': best_method,
+                    'tuning_confidence': best_result.confidence,
+                    'tuning_errors': tuning_errors,  # Добавляем информацию об ошибках
+                })
+                print(f"    [DEBUG] Added visualization data for {metric_name}, context_hash={context_hash[:8]}, events={len(events)}, method={best_method}")
+                
+                print(f"  {group_key}: {len(events)} events, method={best_method}, "
+                      f"params={best_result.parameters.get('window_size')}/{best_result.parameters.get('sensitivity')}")
+        
+        # Шаг 4: Генерируем визуализации
+        visualization_files = []
+        print(f"\n[DEBUG] visualization_data length: {len(visualization_data)}")
+        if visualization_data:
+            print(f"\nStep 3: Generating visualizations... (found {len(visualization_data)} data entries)")
+            try:
+                from .visualization import EventVisualizer
+                from collections import defaultdict
+                from datetime import datetime
+                
+                # Группируем по context_hash (и tuning_method при compare_methods)
+                visualization_by_context = defaultdict(list)
+                for viz_data in visualization_data:
+                    context_hash = viz_data.get('context_hash', '')
+                    # При compare_methods создаем отдельные группы для каждого метода
+                    if compare_methods:
+                        tuning_method = viz_data.get('tuning_method', 'unknown')
+                        # Используем комбинированный ключ: context_hash + method
+                        group_key = f"{context_hash}_{tuning_method}"
+                    else:
+                        group_key = context_hash
+                    visualization_by_context[group_key].append(viz_data)
+                
+                # Добавляем все события для каждого контекста (как в исследовании)
+                for group_key, metrics_data in visualization_by_context.items():
+                    for metric_data in metrics_data:
+                        metric_name = metric_data.get('metric_name', '')
+                        context_hash = metric_data.get('context_hash', '')
+                        tuning_method = metric_data.get('tuning_method', '')
+                        # Находим все события для этого context_hash, metric_name и tuning_method
+                        matching_events = [
+                            event for event in all_events
+                            if event.get('context_hash') == context_hash 
+                            and event.get('metric_name') == metric_name
+                            and (not compare_methods or event.get('tuning_method') == tuning_method)
+                        ]
+                        # Заменяем события на все найденные
+                        metric_data['events'] = matching_events
+                
+                print(f"  Grouped into {len(visualization_by_context)} contexts" + 
+                      (f" ({len(tuning_methods)} methods per context)" if compare_methods else ""))
+                
+                # Генерируем визуализации
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                job_name = self.base_config.get('job', {}).get('name', 'auto_tune')
+                output_dir = self.base_config.get('output', {}).get('output_dir', 'dry_run_output')
+                
+                print(f"  Output directory: {output_dir}")
+                print(f"  Job name: {job_name}")
+                print(f"  Timestamp: {timestamp}")
+                
+                os.makedirs(output_dir, exist_ok=True)
+                
+                EventVisualizer.generate_visualizations(
+                    visualization_by_context,
+                    output_dir,
+                    timestamp,
+                    job_name
+                )
+                
+                # Находим сгенерированные файлы (только с текущим timestamp)
+                output_path = Path(output_dir)
+                if output_path.exists():
+                    # Ищем файлы по паттерну: {job_name}_event_{hash}_{metric}_{timestamp}.html
+                    # Фильтруем только файлы с текущим timestamp
+                    viz_pattern = f"{job_name}_event_*.html"
+                    all_found_files = list(output_path.glob(viz_pattern))
+                    
+                    # Фильтруем только файлы с текущим timestamp
+                    found_files = [f for f in all_found_files if timestamp in f.name]
+                    print(f"  Found {len(found_files)} visualization files with current timestamp '{timestamp}' (total matching pattern: {len(all_found_files)})")
+                    
+                    # Если не нашли, пробуем более широкий паттерн, но все равно фильтруем по timestamp
+                    if not found_files:
+                        viz_pattern_wide = "*_event_*.html"
+                        all_found_files_wide = list(output_path.glob(viz_pattern_wide))
+                        found_files = [f for f in all_found_files_wide if timestamp in f.name]
+                        print(f"  Trying wider pattern '{viz_pattern_wide}': found {len(found_files)} files with current timestamp (total: {len(all_found_files_wide)})")
+                    
+                    for f in found_files:
+                        # Извлекаем context_hash из имени файла
+                        # Формат: {job_name}_event_{hash}_{metric_or_all_metrics}_{timestamp}.html
+                        filename = f.name
+                        print(f"    Processing file: {filename}")
+                        parts = filename.replace('.html', '').split('_')
+                        context_hash_short = ''
+                        event_index = parts.index('event') if 'event' in parts else -1
+                        if event_index >= 0 and event_index + 1 < len(parts):
+                            context_hash_short = parts[event_index + 1]
+                        
+                        print(f"    Extracted: context_hash={context_hash_short}")
+                        
+                        # Находим полный context_hash
+                        full_context_hash = context_hash_short
+                        for viz_data in visualization_data:
+                            if viz_data.get('context_hash', '').startswith(context_hash_short):
+                                full_context_hash = viz_data.get('context_hash', '')
+                                break
+                        
+                        # Находим все метрики для этого контекста
+                        context_metrics = set()
+                        for viz_data in visualization_data:
+                            if viz_data.get('context_hash', '') == full_context_hash or \
+                               (viz_data.get('context_hash', '').startswith(context_hash_short)):
+                                metric_name = viz_data.get('metric_name', '')
+                                if metric_name:
+                                    context_metrics.add(metric_name)
+                        
+                        # Подсчитываем ВСЕ события для этого контекста (все метрики)
+                        events_count = 0
+                        positive_events = 0
+                        negative_events = 0
+                        for event in all_events:
+                            event_context_hash = event.get('context_hash', '')
+                            # Сравниваем по context_hash (полному или короткому)
+                            if full_context_hash and \
+                               (event_context_hash == full_context_hash or 
+                                event_context_hash.startswith(context_hash_short)):
+                                events_count += 1
+                                event_type = event.get('event_type', '')
+                                if 'improvement' in event_type:
+                                    positive_events += 1
+                                elif 'degradation' in event_type:
+                                    negative_events += 1
+                        
+                        # Используем первую метрику или 'all_metrics' если несколько
+                        metric_name = sorted(list(context_metrics))[0] if context_metrics else 'unknown'
+                        if len(context_metrics) > 1:
+                            metric_name = 'all_metrics'
+                        
+                        # Находим информацию о методе и ошибках из visualization_data
+                        tuning_method = 'unknown'
+                        tuning_confidence = 0
+                        tuning_errors = {}
+                        for viz_data in visualization_data:
+                            if viz_data.get('context_hash', '') == full_context_hash or \
+                               (viz_data.get('context_hash', '').startswith(context_hash_short)):
+                                tuning_method = viz_data.get('tuning_method', 'unknown')
+                                tuning_confidence = viz_data.get('tuning_confidence', 0)
+                                tuning_errors = viz_data.get('tuning_errors', {})
+                                break
+                        
+                        visualization_files.append({
+                            'path': f"/api/report/{f.name}",
+                            'metric_name': metric_name,  # Может быть 'all_metrics' если несколько метрик
+                            'context_hash': full_context_hash,
+                            'events_count': events_count,  # Все события для контекста
+                            'positive_events_count': positive_events,
+                            'negative_events_count': negative_events,
+                            'tuning_method': tuning_method,
+                            'tuning_confidence': tuning_confidence,
+                            'tuning_errors': tuning_errors
+                        })
+                
+                print(f"  Generated {len(visualization_files)} visualization files")
+            except Exception as e:
+                import traceback
+                print(f"  ⚠ Error generating visualizations: {e}")
+                traceback.print_exc()
+        
+        # Собираем информацию о контекстах (как в исследовании)
+        contexts_info = []
+        from collections import defaultdict
+        contexts_by_hash = defaultdict(lambda: {
+            'count': 0,
+            'context_json': '{}',
+            'context_key': None,  # Сохраняем context_key для отображения
+            'metrics': set(),
+            'data_points': 0
+        })
+        
+        # Сначала собираем ВСЕ контексты из all_processed_contexts (там есть все проанализированные контексты)
+        for ctx_info in all_processed_contexts:
+            context_hash = ctx_info.get('context_hash', '')
+            context_json = ctx_info.get('context_json', '{}')
+            context_key_str = ctx_info.get('context_key', '')
+            metric_name = ctx_info.get('metric_name', '')
+            
+            if context_hash:
+                contexts_by_hash[context_hash]['context_key'] = context_key_str
+                contexts_by_hash[context_hash]['context_json'] = context_json
+                if metric_name:
+                    contexts_by_hash[context_hash]['metrics'].add(metric_name)
+        
+        print(f"  Collected {len(contexts_by_hash)} unique contexts from {len(all_processed_contexts)} processed groups")
+        
+        # Подсчитываем события по контекстам
+        for event in all_events:
+            context_hash = event.get('context_hash', '')
+            context_json = event.get('context_json', '{}')
+            metric_name = event.get('metric_name', '')
+            
+            if context_hash:
+                contexts_by_hash[context_hash]['count'] += 1
+                if context_json and context_json != '{}':
+                    contexts_by_hash[context_hash]['context_json'] = context_json
+                if metric_name:
+                    contexts_by_hash[context_hash]['metrics'].add(metric_name)
+        
+        # Подсчитываем количество графиков (визуализаций) для каждого контекста
+        # Теперь один график на контекст, поэтому просто отмечаем что есть визуализация
+        for viz_file in visualization_files:
+            context_hash = viz_file.get('context_hash', '')
+            metric_name = viz_file.get('metric_name', '')
+            if context_hash:
+                contexts_by_hash[context_hash]['data_points'] = 1  # Один график на контекст
+                if metric_name and metric_name != 'all_metrics':
+                    contexts_by_hash[context_hash]['metrics'].add(metric_name)
+                elif metric_name == 'all_metrics':
+                    # Если all_metrics, добавляем все метрики из visualization_data
+                    for viz_data in visualization_data:
+                        if viz_data.get('context_hash', '') == context_hash:
+                            m_name = viz_data.get('metric_name', '')
+                            if m_name:
+                                contexts_by_hash[context_hash]['metrics'].add(m_name)
+        
+        # Формируем список контекстов
+        for context_hash, info in contexts_by_hash.items():
+            try:
+                context_dict = json.loads(info['context_json']) if info['context_json'] else {}
+                
+                # Форматируем контекст как читаемую строку
+                context_str = ', '.join([f"{k}={v}" for k, v in sorted(context_dict.items())])
+                
+                # Если нет context_json, пытаемся использовать context_key
+                if not context_str and info.get('context_key'):
+                    # Форматируем context_key для отображения
+                    context_key_str = info['context_key']
+                    # Убираем лишние символы и форматируем
+                    if context_key_str.startswith('(') and context_key_str.endswith(')'):
+                        # Парсим tuple и форматируем
+                        try:
+                            import ast
+                            context_key = ast.literal_eval(context_key_str)
+                            if isinstance(context_key, tuple) and len(context_key) > 1:
+                                # Пропускаем первый элемент (метрику), остальное - контекст
+                                context_parts = []
+                                for i, val in enumerate(context_key[1:], 1):
+                                    # Пытаемся определить имя поля из конфига
+                                    context_fields = self.base_config.get('context_fields', [])
+                                    if i <= len(context_fields):
+                                        field_name = context_fields[i-1]
+                                    else:
+                                        field_name = f"field{i}"
+                                    context_parts.append(f"{field_name}={val}")
+                                context_str = ', '.join(context_parts)
+                        except Exception:
+                            context_str = context_key_str
+                    else:
+                        context_str = context_key_str
+                
+                if not context_str:
+                    context_str = f"Context {context_hash[:8]}"
+                
+                contexts_info.append({
+                    'context_hash': context_hash,
+                    'context_hash_short': context_hash[:8],
+                    'context_json': info['context_json'],
+                    'context_display': context_str,
+                    'metrics': sorted(list(info['metrics'])),
+                    'events_count': info['count'],
+                    'viz_count': info['data_points'],  # Количество графиков для этого контекста
+                })
+            except Exception as e:
+                import traceback
+                print(f"  ⚠ Error processing context {context_hash[:8]}: {e}")
+                continue
+        
+        # Сортируем по количеству событий (убывание)
+        contexts_info.sort(key=lambda x: x['events_count'], reverse=True)
+        
+        # Шаг 5: Генерируем отчет
+        print("\nStep 4: Generating report...")
+        
+        result = {
+            'success': True,
+            'events': all_events,
+            'events_count': len(all_events),
+            'contexts_analyzed': len(context_results) if compare_methods else len(all_baselines),
+            'baselines': all_baselines,
+            'visualization_files': visualization_files,  # Добавляем пути к файлам визуализации
+            'contexts_info': contexts_info,  # Добавляем информацию о контекстах
+        }
+        
+        if compare_methods:
+            result['comparison'] = self._compare_tuning_methods(context_results)
+        
+        # Сохраняем оптимальные параметры (уже сериализованы в all_baselines)
+        if not compare_methods:
+            optimal_params_summary = {}
+            for baseline in all_baselines:
+                context_key = baseline['context_key']
+                optimal_params_summary[context_key] = {
+                    'parameters': baseline['optimal_params'],  # Уже сериализованы
+                    'method': baseline['tuning_method'],
+                    'confidence': baseline['tuning_confidence'],
+                    'reasoning': baseline.get('reasoning', ''),
+                }
+            result['optimal_params'] = optimal_params_summary
+        
+        print(f"\n{'='*80}")
+        print(f"Auto-tune completed: {len(all_events)} events found in {len(all_baselines)} contexts")
+        print(f"{'='*80}")
+        
+        return result
+    
+    def _compare_tuning_methods(self, context_results: Dict) -> Dict[str, Any]:
+        """Сравнение результатов разных методов подбора"""
+        if not context_results:
+            return {
+                'methods': [],
+                'contexts': {},
+                'summary': {}
+            }
+        
+        first_context = next(iter(context_results.values()))
+        comparison = {
+            'methods': list(first_context['tuning_results'].keys()) if 'tuning_results' in first_context else [],
+            'contexts': {},
+            'summary': {}
+        }
+        
+        method_stats = {method: {'events': 0, 'avg_confidence': 0.0} for method in comparison['methods']}
+        
+        for context_key, context_data in context_results.items():
+            # characteristics уже сериализован в dict
+            characteristics = context_data.get('characteristics', {})
+            context_comparison = {
+                'characteristics': {
+                    'cv': characteristics.get('coefficient_of_variation', 0),
+                    'stability': characteristics.get('baseline_stability', 0),
+                    'volatility': characteristics.get('volatility', 0),
+                },
+                'tuning_results': {},
+                'events_by_method': {}
+            }
+            
+            # tuning_results уже сериализованы в dict
+            for method_name, tuning_result_dict in context_data.get('tuning_results', {}).items():
+                # Сериализуем parameters если нужно
+                parameters_serializable = {}
+                for key, value in tuning_result_dict.get('parameters', {}).items():
+                    if isinstance(value, pd.Series):
+                        parameters_serializable[key] = value.tolist()
+                    elif isinstance(value, (pd.Timestamp, pd.Timedelta)):
+                        parameters_serializable[key] = str(value)
+                    elif hasattr(value, 'item'):  # numpy types
+                        try:
+                            parameters_serializable[key] = value.item()
+                        except (AttributeError, ValueError):
+                            parameters_serializable[key] = float(value) if isinstance(value, (int, float)) else str(value)
+                    else:
+                        parameters_serializable[key] = value
+                
+                context_comparison['tuning_results'][method_name] = {
+                    'parameters': parameters_serializable,
+                    'confidence': tuning_result_dict.get('confidence', 0),
+                    'reasoning': tuning_result_dict.get('reasoning', ''),
+                }
+                
+                events = context_data.get('events_by_method', {}).get(method_name, [])
+                context_comparison['events_by_method'][method_name] = len(events)
+                method_stats[method_name]['events'] += len(events)
+            
+            # Вычисляем среднюю уверенность для каждого метода
+            for method_name in comparison['methods']:
+                confidences = [
+                    r.get('confidence', 0) for r in context_data.get('tuning_results', {}).values()
+                    if r.get('method') == method_name
+                ]
+                if confidences:
+                    method_stats[method_name]['avg_confidence'] += sum(confidences) / len(confidences)
+            
+            comparison['contexts'][str(context_key)] = context_comparison
+        
+        # Нормализуем статистику
+        num_contexts = len(context_results)
+        for method_name in comparison['methods']:
+            if num_contexts > 0:
+                method_stats[method_name]['avg_confidence'] /= num_contexts
+        
+        comparison['summary'] = method_stats
+        
+        return comparison
 

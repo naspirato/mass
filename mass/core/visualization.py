@@ -46,7 +46,28 @@ class EventVisualizer:
                 context_json = first_metric.get('context_json', '{}')
                 safe_context_hash = context_hash[:8]  # Use first 8 chars for filename
                 
-                # Generate separate visualization file for each metric
+                # Generate ONE visualization file per context with all metrics (like in exploration mode)
+                # Create subplots if multiple metrics, single plot if one metric
+                num_metrics = len([m for m in metrics_data if m.get('series') is not None and not m.get('series').empty])
+                
+                if num_metrics == 0:
+                    continue
+                
+                # Create figure with subplots if multiple metrics
+                if num_metrics > 1:
+                    fig = make_subplots(
+                        rows=num_metrics, cols=1,
+                        subplot_titles=[m.get('metric_name', 'Unknown') for m in metrics_data if m.get('series') is not None and not m.get('series').empty],
+                        vertical_spacing=0.1,
+                        shared_xaxes=True
+                    )
+                else:
+                    fig = go.Figure()
+                
+                subplot_idx = 1
+                all_events_for_context = []  # Собираем все события для контекста
+                
+                # Add all metrics to the figure
                 for metric_data in metrics_data:
                     series = metric_data.get('series')
                     baseline_result = metric_data.get('baseline_result', {})
@@ -57,53 +78,72 @@ class EventVisualizer:
                     if series is None or series.empty:
                         continue
                     
-                    # Create a single figure for this metric (no subplots)
-                    fig = go.Figure()
-                    
                     # Get baseline series if available
                     baseline_series = baseline_result.get('baseline_series')
                     upper_threshold = baseline_result.get('upper_threshold')
                     lower_threshold = baseline_result.get('lower_threshold')
                     
+                    # Determine which subplot to use
+                    row = subplot_idx if num_metrics > 1 else None
+                    
                     # Plot metric values - handle single point case
                     if len(series) > 0:
-                        fig.add_trace(go.Scatter(
-                            x=series.index,
-                            y=series.values,
-                            mode='lines+markers' if len(series) > 1 else 'markers',
-                            name=f'{metric_name} Value',
-                            line=dict(color='blue', width=2) if len(series) > 1 else None,
-                            marker=dict(size=8 if len(series) == 1 else 4)
-                        ))
+                        trace_kwargs = {
+                            'x': series.index,
+                            'y': series.values,
+                            'mode': 'lines+markers' if len(series) > 1 else 'markers',
+                            'name': f'{metric_name} Value',
+                            'line': dict(color='blue', width=2) if len(series) > 1 else None,
+                            'marker': dict(size=8 if len(series) == 1 else 4)
+                        }
+                        if row:
+                            trace_kwargs['row'] = row
+                            trace_kwargs['col'] = 1
+                        fig.add_trace(go.Scatter(**trace_kwargs))
                     
                     # Plot baseline if available
                     if baseline_series is not None and not baseline_series.empty:
-                        fig.add_trace(go.Scatter(
-                            x=baseline_series.index,
-                            y=baseline_series.values,
-                            mode='lines',
-                            name=f'{metric_name} Baseline',
-                            line=dict(color='green', width=2, dash='dash')
-                        ))
+                        trace_kwargs = {
+                            'x': baseline_series.index,
+                            'y': baseline_series.values,
+                            'mode': 'lines',
+                            'name': f'{metric_name} Baseline',
+                            'line': dict(color='green', width=2, dash='dash')
+                        }
+                        if row:
+                            trace_kwargs['row'] = row
+                            trace_kwargs['col'] = 1
+                        fig.add_trace(go.Scatter(**trace_kwargs))
                     
                     # Plot thresholds
                     if upper_threshold is not None:
-                        fig.add_trace(go.Scatter(
-                            x=series.index,
-                            y=[upper_threshold] * len(series),
-                            mode='lines',
-                            name=f'{metric_name} Upper Threshold',
-                            line=dict(color='red', width=1, dash='dot')
-                        ))
+                        trace_kwargs = {
+                            'x': series.index,
+                            'y': [upper_threshold] * len(series),
+                            'mode': 'lines',
+                            'name': f'{metric_name} Upper Threshold',
+                            'line': dict(color='red', width=1, dash='dot')
+                        }
+                        if row:
+                            trace_kwargs['row'] = row
+                            trace_kwargs['col'] = 1
+                        fig.add_trace(go.Scatter(**trace_kwargs))
                     
                     if lower_threshold is not None:
-                        fig.add_trace(go.Scatter(
-                            x=series.index,
-                            y=[lower_threshold] * len(series),
-                            mode='lines',
-                            name=f'{metric_name} Lower Threshold',
-                            line=dict(color='orange', width=1, dash='dot')
-                        ))
+                        trace_kwargs = {
+                            'x': series.index,
+                            'y': [lower_threshold] * len(series),
+                            'mode': 'lines',
+                            'name': f'{metric_name} Lower Threshold',
+                            'line': dict(color='orange', width=1, dash='dot')
+                        }
+                        if row:
+                            trace_kwargs['row'] = row
+                            trace_kwargs['col'] = 1
+                        fig.add_trace(go.Scatter(**trace_kwargs))
+                    
+                    # Collect all events for this metric
+                    all_events_for_context.extend(events)
                     
                     # Highlight event periods for this metric
                     for event in events:
@@ -119,16 +159,30 @@ class EventVisualizer:
                         else:
                             color = 'rgba(255, 255, 0, 0.2)'
                         
-                        # Add shaded region for event period
-                        fig.add_vrect(
-                            x0=event_start,
-                            x1=event_end,
-                            fillcolor=color,
-                            layer="below",
-                            line_width=0,
-                            annotation_text=f"{metric_name}: {event_type}",
-                            annotation_position="top left"
-                        )
+                        # Add shaded region for event period (only for single plot or current subplot)
+                        if num_metrics == 1:
+                            fig.add_vrect(
+                                x0=event_start,
+                                x1=event_end,
+                                fillcolor=color,
+                                layer="below",
+                                line_width=0,
+                                annotation_text=f"{metric_name}: {event_type}",
+                                annotation_position="top left"
+                            )
+                        elif row:
+                            # For subplots, add vrect to specific subplot
+                            fig.add_vrect(
+                                x0=event_start,
+                                x1=event_end,
+                                fillcolor=color,
+                                layer="below",
+                                line_width=0,
+                                annotation_text=f"{metric_name}: {event_type}",
+                                annotation_position="top left",
+                                row=row,
+                                col=1
+                            )
                         
                         # Add marker at event start
                         event_value = series.get(event_start, None)
@@ -143,56 +197,114 @@ class EventVisualizer:
                         else:
                             event_time = event_start
                         
-                        fig.add_trace(go.Scatter(
-                            x=[event_time],
-                            y=[event_value],
-                            mode='markers',
-                            name=f"{metric_name}: {event_type}",
-                            marker=dict(size=12, symbol='star', color='red' if 'degradation' in event_type else 'green'),
-                            showlegend=False
-                        ))
+                        trace_kwargs = {
+                            'x': [event_time],
+                            'y': [event_value],
+                            'mode': 'markers',
+                            'name': f"{metric_name}: {event_type}",
+                            'marker': dict(size=12, symbol='star', color='red' if 'degradation' in event_type else 'green'),
+                            'showlegend': False
+                        }
+                        if row:
+                            trace_kwargs['row'] = row
+                            trace_kwargs['col'] = 1
+                        fig.add_trace(go.Scatter(**trace_kwargs))
                     
-                    # Add annotations about what couldn't be determined
-                    annotations = []
+                    # Update y-axis for this subplot
+                    if row:
+                        fig.update_yaxes(title_text=metric_name, row=row, col=1)
                     
-                    if not events or len(events) == 0:
-                        annotations.append(dict(
-                            xref="paper", yref="paper",
-                            x=0.5, y=0.98,
-                            text="⚠ События не обнаружены",
-                            showarrow=False,
-                            font=dict(size=14, color="orange"),
-                            bgcolor="rgba(255, 255, 255, 0.8)",
-                            bordercolor="orange",
-                            borderwidth=1
-                        ))
+                    subplot_idx += 1
+                
+                # Add annotations about events
+                annotations = []
+                
+                if not all_events_for_context or len(all_events_for_context) == 0:
+                    annotations.append(dict(
+                        xref="paper", yref="paper",
+                        x=0.5, y=0.98,
+                        text="⚠ События не обнаружены",
+                        showarrow=False,
+                        font=dict(size=14, color="orange"),
+                        bgcolor="rgba(255, 255, 255, 0.8)",
+                        bordercolor="orange",
+                        borderwidth=1
+                    ))
+                
+                # Update layout - one file per context
+                metric_names = [m.get('metric_name', 'Unknown') for m in metrics_data if m.get('series') is not None and not m.get('series').empty]
+                
+                # Получаем информацию о методе из первого метрика (все должны иметь одинаковый метод)
+                first_metric = next((m for m in metrics_data if m.get('series') is not None and not m.get('series').empty), None)
+                tuning_method = first_metric.get('tuning_method', 'unknown') if first_metric else 'unknown'
+                tuning_confidence = first_metric.get('tuning_confidence', 0) if first_metric else 0
+                
+                # Форматируем название метода
+                method_display = {
+                    'adaptive': 'Adaptive',
+                    'ml': 'ML',
+                    'hybrid': 'Hybrid',
+                    'ml_fallback': 'ML (fallback)'
+                }.get(tuning_method, tuning_method.capitalize())
+                
+                title = f"{', '.join(metric_names)} - Events Visualization" if len(metric_names) > 1 else f"{metric_names[0] if metric_names else 'Unknown'} - Events Visualization"
+                title += f"<br><sub>Method: {method_display}"
+                if tuning_confidence > 0:
+                    title += f" (confidence: {tuning_confidence:.1%})"
+                title += f" | {context_json[:80]}...</sub>"
+                
+                layout_kwargs = {
+                    'title': title,
+                    'xaxis_title': "Time" if num_metrics == 1 else None,
+                    'hovermode': 'x unified',
+                    'height': 400 * num_metrics if num_metrics > 1 else 400,
+                    'showlegend': True,
+                    'legend': dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+                    'annotations': annotations
+                }
+                
+                if num_metrics > 1:
+                    # Update x-axis for bottom subplot only
+                    fig.update_xaxes(title_text="Time", row=num_metrics, col=1)
+                else:
+                    layout_kwargs['yaxis_title'] = metric_names[0] if metric_names else 'Value'
+                
+                fig.update_layout(**layout_kwargs)
+                
+                # Save to HTML file - ONE file per context
+                # Use first metric name or "all_metrics" if multiple
+                if len(metric_names) == 1:
+                    safe_metric_name = metric_names[0].replace(' ', '_').replace('/', '_').replace('\\', '_')[:50]
+                else:
+                    safe_metric_name = 'all_metrics'
+                
+                # Добавляем метод в имя файла, если он указан (для compare_methods)
+                method_suffix = ""
+                if tuning_method and tuning_method != 'unknown':
+                    method_suffix = f"_{tuning_method}"
+                
+                filename = f"{job_name}_event_{safe_context_hash}_{safe_metric_name}{method_suffix}_{timestamp}.html"
+                filepath = os.path.join(output_dir, filename)
+                fig.write_html(filepath)
+                
+                # Save data for this visualization (for debugging and test creation)
+                # Save all metrics data, baseline_result, events, and context info
+                data_filename = filename.replace('.html', '_data.json')
+                data_filepath = os.path.join(output_dir, data_filename)
+                
+                # Prepare data for JSON serialization - collect all metrics
+                all_metrics_data = []
+                for metric_data in metrics_data:
+                    series = metric_data.get('series')
+                    if series is None or series.empty:
+                        continue
                     
-                    # Update layout
-                    fig.update_layout(
-                        title=f"{metric_name} - Events Visualization<br><sub>{context_json[:100]}...</sub>",
-                        xaxis_title="Time",
-                        yaxis_title=metric_name,
-                        hovermode='x unified',
-                        height=400,
-                        showlegend=True,
-                        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-                        annotations=annotations
-                    )
+                    baseline_result = metric_data.get('baseline_result', {})
+                    events = metric_data.get('events', [])
+                    metric_name = metric_data.get('metric_name', 'Unknown')
+                    baseline_series = baseline_result.get('baseline_series')
                     
-                    # Save to HTML file - one file per metric
-                    # Sanitize metric name for filename
-                    safe_metric_name = metric_name.replace(' ', '_').replace('/', '_').replace('\\', '_')[:50]
-                    filename = f"{job_name}_event_{safe_context_hash}_{safe_metric_name}_{timestamp}.html"
-                    filepath = os.path.join(output_dir, filename)
-                    fig.write_html(filepath)
-                    
-                    # Save data for this visualization (for debugging and test creation)
-                    # Save series, baseline_result, events, and context info
-                    data_filename = filename.replace('.html', '_data.json')
-                    data_filepath = os.path.join(output_dir, data_filename)
-                    
-                    # Prepare data for JSON serialization
-                    # Convert series to dict with index and values
+                    # Convert series to dict
                     series_dict = {
                         'index': [str(idx) for idx in series.index],
                         'values': series.values.tolist()
@@ -235,26 +347,28 @@ class EventVisualizer:
                                 event_serializable[key] = value
                         events_serializable.append(event_serializable)
                     
-                    # Save all data including variant config
-                    import json
-                    variant_config = metric_data.get('variant_config', {})
-                    saved_data = {
+                    all_metrics_data.append({
                         'metric_name': metric_name,
-                        'context_hash': context_hash,
-                        'context_json': context_json,
                         'series': series_dict,
                         'baseline_series': baseline_series_dict,
                         'baseline_result': baseline_result_serializable,
-                        'events': events_serializable,
-                        'variant_config': variant_config,
-                        'timestamp': timestamp,
-                        'job_name': job_name
-                    }
-                    
-                    with open(data_filepath, 'w', encoding='utf-8') as f:
-                        json.dump(saved_data, f, indent=2, ensure_ascii=False, default=str)
-                    
-                    files_generated += 1
+                        'events': events_serializable
+                    })
+                
+                # Save all data for this context
+                import json
+                saved_data = {
+                    'context_hash': context_hash,
+                    'context_json': context_json,
+                    'metrics': all_metrics_data,
+                    'timestamp': timestamp,
+                    'job_name': job_name
+                }
+                
+                with open(data_filepath, 'w', encoding='utf-8') as f:
+                    json.dump(saved_data, f, indent=2, ensure_ascii=False, default=str)
+                
+                files_generated += 1
                 
             except Exception as e:
                 print(f"    ⚠ Could not generate visualization for context {idx}: {e}")

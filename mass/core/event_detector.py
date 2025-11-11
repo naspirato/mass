@@ -321,11 +321,27 @@ class EventDetector:
         # Get sensitivity for threshold calculation (same as degradation detection)
         sensitivity = baseline_result.get('sensitivity', 2.0)
         
+        # For improvement detection, use a more stable baseline reference
+        # Instead of using current baseline (which adapts quickly), use baseline from before the potential improvement
+        # This allows detecting improvements even when baseline adapts to the new level
+        # Strategy: for each point, use the maximum baseline in a lookback window
+        # This captures the "normal" level before improvement
+        lookback_window = min(self.window_size, len(baseline_values))
+        stable_baseline_values = pd.Series(index=baseline_values.index, dtype=float)
+        
+        for i in range(len(baseline_values)):
+            if i < lookback_window:
+                # For early points, use all previous points
+                stable_baseline_values.iloc[i] = baseline_values.iloc[:i+1].max() if i > 0 else baseline_values.iloc[i]
+            else:
+                # For later points, use max baseline in lookback window
+                # This ensures we compare against the "normal" level before improvement
+                stable_baseline_values.iloc[i] = baseline_values.iloc[i-lookback_window:i+1].max()
+        
         # Calculate improvement threshold with volatility consideration
-        # Improvement threshold should account for natural data volatility
-        # Use sensitivity * std_residuals to avoid false positives from noise
-        improvement_threshold_abs = baseline_values - min_abs_change - sensitivity * std_residuals
-        improvement_threshold_rel = baseline_values * (1 - min_rel_change) - sensitivity * std_residuals
+        # Use stable baseline to avoid premature segment termination when baseline adapts
+        improvement_threshold_abs = stable_baseline_values - min_abs_change - sensitivity * std_residuals
+        improvement_threshold_rel = stable_baseline_values * (1 - min_rel_change) - sensitivity * std_residuals
         # Use the more restrictive (lower) threshold
         improvement_threshold = pd.concat([improvement_threshold_abs, improvement_threshold_rel], axis=1).min(axis=1)
         

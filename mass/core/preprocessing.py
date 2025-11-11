@@ -344,18 +344,66 @@ class Preprocessing:
         Returns:
             Native Python type
         """
+        # Handle None and pandas NA first
+        if value is None or pd.isna(value):
+            return None
+        
+        # Handle pandas types
+        if isinstance(value, (pd.Timestamp, pd.Timedelta)):
+            return str(value)
+        
+        # Check if it's a numpy scalar type by checking the type name
+        type_name = type(value).__name__
+        if 'int' in type_name.lower() and hasattr(value, 'item'):
+            try:
+                return int(value.item())
+            except (AttributeError, ValueError):
+                return int(value)
+        elif 'float' in type_name.lower() and hasattr(value, 'item'):
+            try:
+                return float(value.item())
+            except (AttributeError, ValueError):
+                return float(value)
+        elif 'bool' in type_name.lower() and hasattr(value, 'item'):
+            try:
+                return bool(value.item())
+            except (AttributeError, ValueError):
+                return bool(value)
+        
+        # Handle numpy integer types (more specific checks)
         if isinstance(value, (np.integer, np.intc, np.intp, np.int8,
                               np.int16, np.int32, np.int64, np.uint8, np.uint16,
                               np.uint32, np.uint64)):
             return int(value)
+        # Handle numpy floating types
         elif isinstance(value, (np.floating, np.float16, np.float32, np.float64)):
             return float(value)
+        # Handle numpy boolean
         elif isinstance(value, np.bool_):
             return bool(value)
+        # Handle numpy arrays
         elif isinstance(value, np.ndarray):
             return value.tolist()
-        elif pd.isna(value):
-            return None
+        # Fallback: try to convert via .item() for other numpy types
+        elif hasattr(value, 'item'):
+            try:
+                result = value.item()
+                # Recursively convert if result is still numpy type
+                if hasattr(result, 'item') or isinstance(result, (np.integer, np.floating, np.bool_)):
+                    return self._convert_to_native_type(result)
+                return result
+            except (AttributeError, ValueError):
+                # If .item() fails, try direct conversion based on dtype
+                if hasattr(value, 'dtype'):
+                    dtype_str = str(value.dtype)
+                    if 'int' in dtype_str:
+                        return int(value)
+                    elif 'float' in dtype_str:
+                        return float(value)
+                    elif 'bool' in dtype_str:
+                        return bool(value)
+                # Last resort: convert to string
+                return str(value)
         else:
             return value
     
@@ -370,12 +418,36 @@ class Preprocessing:
             Hexadecimal hash string
         """
         # Convert numpy/pandas types to native Python types for JSON serialization
-        serializable_context = {
-            k: self._convert_to_native_type(v) for k, v in context_values.items()
-        }
+        serializable_context = {}
+        for k, v in context_values.items():
+            # Двойная конвертация для надежности
+            converted = self._convert_to_native_type(v)
+            # Проверяем, что результат действительно сериализуемый
+            if hasattr(converted, 'item') or isinstance(converted, (np.integer, np.floating, np.bool_, np.ndarray)):
+                # Если все еще numpy тип, конвертируем еще раз
+                converted = self._convert_to_native_type(converted)
+            # Дополнительная проверка по имени типа
+            type_name = type(converted).__name__
+            if 'int' in type_name.lower() and hasattr(converted, 'item'):
+                try:
+                    converted = int(converted.item())
+                except:
+                    converted = int(converted)
+            elif 'float' in type_name.lower() and hasattr(converted, 'item'):
+                try:
+                    converted = float(converted.item())
+                except:
+                    converted = float(converted)
+            serializable_context[k] = converted
         
         # Create a sorted representation of context
-        context_str = json.dumps(serializable_context, sort_keys=True)
+        try:
+            context_str = json.dumps(serializable_context, sort_keys=True)
+        except TypeError as e:
+            # Если все еще ошибка, попробуем конвертировать все значения в строки
+            print(f"  ⚠ Warning: JSON serialization failed, converting all values to strings: {e}")
+            serializable_context = {k: str(v) for k, v in serializable_context.items()}
+            context_str = json.dumps(serializable_context, sort_keys=True)
         
         # Compute hash
         hash_obj = hashlib.md5(context_str.encode('utf-8'))
@@ -389,7 +461,7 @@ class Preprocessing:
             group_key: Tuple of (metric_name, *context_values)
             
         Returns:
-            Dictionary mapping context fields to values
+            Dictionary mapping context fields to values (with numpy types converted to native Python types)
         """
         if len(group_key) < 1:
             return {}
@@ -400,7 +472,9 @@ class Preprocessing:
         if len(group_key) > 1:
             for i, field in enumerate(self.context_fields, start=1):
                 if i < len(group_key):
-                    context_values[field] = group_key[i]
+                    # Конвертируем numpy типы сразу при извлечении
+                    value = group_key[i]
+                    context_values[field] = self._convert_to_native_type(value)
         
         return context_values
     
