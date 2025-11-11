@@ -3,13 +3,14 @@
 Tests for the DetectionManager orchestrator supporting multiple detector strategies.
 """
 
+import copy
 import unittest
 from datetime import datetime, timedelta
 
 import pandas as pd
 
 from mass.core.baseline_calculator import BaselineCalculator
-from mass.core.detection_manager import DetectionManager, PYOD_AVAILABLE
+from mass.core.detection_manager import DetectionManager, PYOD_AVAILABLE, RUPTURES_AVAILABLE
 
 
 class TestDetectionManager(unittest.TestCase):
@@ -42,7 +43,8 @@ class TestDetectionManager(unittest.TestCase):
                         'label': 'PyOD Isolation Forest',
                         'params': {
                             'contamination': 0.1,
-                            'min_points': 15
+                            'min_points': 15,
+                            'random_state': 42
                         }
                     }
                 },
@@ -85,14 +87,51 @@ class TestDetectionManager(unittest.TestCase):
                 self.assertEqual(event.get('detector_id'), default_result.detector_id)
                 self.assertEqual(event.get('detector_label'), default_result.detector_label)
 
+    @unittest.skipUnless(PYOD_AVAILABLE, "PyOD is not installed")
+    def test_pyod_detector_reports_degradation(self):
+        config = copy.deepcopy(self.config)
+        config['analytics']['hysteresis_points'] = 1
+        config['events']['min_event_duration_minutes'] = 0
+        config['events']['detectors']['pyod_iforest']['analytics'] = {
+            'hysteresis_points': 1,
+            'min_absolute_change': 1,
+            'min_relative_change': 0.01
+        }
+        config['events']['detectors']['pyod_iforest']['events'] = {
+            'min_event_duration_minutes': 0
+        }
+        config['events']['detectors']['pyod_iforest']['params']['contamination'] = 0.3
+
+        values = [100.0] * 40 + [400.0] * 20
+        index = self.timestamps[:60]
+        series = pd.Series(values, index=index)
+        baseline_series = pd.Series([100.0] * len(series), index=index)
+        baseline_result = {
+            'baseline_series': baseline_series,
+            'baseline_value': 100.0,
+            'upper_threshold': 150.0,
+            'lower_threshold': 50.0,
+            'sensitivity': 2.0,
+            'adaptive_threshold': False,
+            'baseline_method': 'constant',
+            'window_size': 1
+        }
+
+        manager = DetectionManager(config)
+        results = manager.detect_all(series, baseline_result, metric_name='duration_ms')
+
+        pyod_result = next((res for res in results if res.detector_id == 'pyod_iforest'), None)
+        self.assertIsNotNone(pyod_result, "PyOD detector result not found")
+        self.assertIsNotNone(pyod_result.extras.get('scores'))
+
     def test_disabled_detectors_are_ignored_but_default_falls_back(self):
         series = self._build_series()
         baseline_calc = BaselineCalculator(self.config)
         baseline_result = baseline_calc.compute_baseline_and_thresholds(series)
 
-        config = dict(self.config)
-        events_cfg = dict(config['events'])
-        detectors_cfg = dict(events_cfg['detectors'])
+        config = copy.deepcopy(self.config)
+        events_cfg = config['events']
+        detectors_cfg = events_cfg['detectors']
         detectors_cfg['pyod_iforest'] = dict(detectors_cfg['pyod_iforest'])
         detectors_cfg['pyod_iforest']['enabled'] = False
         events_cfg['detectors'] = detectors_cfg
@@ -113,8 +152,7 @@ class TestDetectionManager(unittest.TestCase):
         baseline_calc = BaselineCalculator(self.config)
         baseline_result = baseline_calc.compute_baseline_and_thresholds(series)
 
-        config = dict(self.config)
-        config['events'] = dict(self.config['events'])
+        config = copy.deepcopy(self.config)
         config['events']['detectors'] = [
             {'id': 'baseline_threshold', 'type': 'threshold', 'label': 'Baseline Threshold'},
             {'id': 'ruptures_binseg', 'type': 'ruptures', 'enabled': False}
@@ -130,6 +168,34 @@ class TestDetectionManager(unittest.TestCase):
         results = manager.detect_all(series, baseline_result, metric_name='duration_ms')
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].detector_id, 'baseline_threshold')
+
+    @unittest.skipUnless(RUPTURES_AVAILABLE, "ruptures is not installed")
+    def test_ruptures_detector_reports_shift(self):
+        series = self._build_series()
+        baseline_calc = BaselineCalculator(self.config)
+        baseline_result = baseline_calc.compute_baseline_and_thresholds(series)
+
+        config = copy.deepcopy(self.config)
+        config['events']['detect'] = ['degradation_start', 'improvement_start', 'threshold_shift']
+        config['events']['detectors']['ruptures_binseg'] = {
+            'type': 'ruptures',
+            'label': 'Ruptures Binseg',
+            'params': {
+                'n_bkps': 1,
+                'penalty': 5,
+                'window': 10
+            }
+        }
+        config['events']['compare_detectors'] = ['baseline_threshold', 'ruptures_binseg']
+
+        manager = DetectionManager(config)
+        results = manager.detect_all(series, baseline_result, metric_name='duration_ms')
+        ruptures_result = next((res for res in results if res.detector_id == 'ruptures_binseg'), None)
+
+        self.assertIsNotNone(ruptures_result, "Ruptures detector result not found")
+        self.assertGreater(len(ruptures_result.events), 0, "Ruptures detector should report shifts")
+        event_types = {event['event_type'] for event in ruptures_result.events}
+        self.assertIn('threshold_shift', event_types)
 
 
 if __name__ == '__main__':
