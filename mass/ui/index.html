@@ -670,6 +670,14 @@
                         </div>
                         
                         <div style="margin-bottom: 15px;">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 500;">
+                                Окно анализа событий (event_deepness)
+                                <span class="label-help">Например: 7d, 30d, 12h, 2w</span>
+                            </label>
+                            <input type="text" id="eventDeepnessInput" placeholder="например, 7d, 30d, 12h" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        
+                        <div style="margin-bottom: 15px;">
                             <label style="display: flex; align-items: center; gap: 8px;">
                                 <input type="checkbox" id="dryRunCheck" checked>
                                 <span>Dry run (не записывать в YDB)</span>
@@ -1024,6 +1032,8 @@
             const statusDiv = document.getElementById('exploreStatus');
             const resultsDiv = document.getElementById('exploreResults');
             const resultsContent = document.getElementById('exploreResultsContent');
+            const eventDeepnessInput = document.getElementById('eventDeepnessInput');
+            const eventDeepness = eventDeepnessInput ? eventDeepnessInput.value.trim() : '';
             
             if (!baseConfigPath) {
                 alert('Выберите базовый конфиг');
@@ -1061,16 +1071,21 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 3600000); // 1 hour timeout
                 
-                const response = await fetch('/api/explore', {
+                  const bodyPayload = {
+                      base_config_path: baseConfigPath,
+                      variants: variants,
+                      data_file: savedDataFile
+                  };
+                  if (eventDeepness) {
+                      bodyPayload.event_deepness = eventDeepness;
+                  }
+                  
+                  const response = await fetch('/api/explore', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        base_config_path: baseConfigPath,
-                        variants: variants,
-                        data_file: savedDataFile
-                    }),
+                      body: JSON.stringify(bodyPayload),
                     signal: controller.signal
                 });
                 
@@ -3240,6 +3255,8 @@
         async function runAnalytics() {
             const filename = document.getElementById('configFileName').value.trim();
             const dryRun = document.getElementById('dryRunCheck').checked;
+            const eventDeepnessInput = document.getElementById('eventDeepnessInput');
+            const eventDeepness = eventDeepnessInput ? eventDeepnessInput.value.trim() : '';
             const statusDiv = document.getElementById('runStatus');
             
             // Get current config
@@ -3308,15 +3325,20 @@
             statusDiv.textContent = '⏳ Запуск аналитики...';
             
             try {
+                const payload = {
+                    config_path: configPath,
+                    dry_run: dryRun
+                };
+                if (eventDeepness) {
+                    payload.event_deepness = eventDeepness;
+                }
+                
                 const response = await fetch(`${API_BASE}/api/run`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        config_path: configPath,
-                        dry_run: dryRun
-                    })
+                    body: JSON.stringify(payload)
                 });
                 
                 const data = await response.json();
