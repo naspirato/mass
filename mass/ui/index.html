@@ -131,6 +131,66 @@
             gap: 8px;
         }
         
+        .detectors-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .detector-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 12px;
+            background: #fafafa;
+        }
+        
+        .detector-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        
+        .detector-header label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+        }
+        
+        .detector-description {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .detector-params {
+            margin-top: 10px;
+            display: grid;
+            gap: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        }
+        
+        .detector-params label {
+            font-size: 12px;
+            color: #555;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .detector-params input {
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        
+        .compare-detectors {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
         input[type="checkbox"] {
             width: auto;
         }
@@ -520,6 +580,18 @@
                                     threshold_shift - сдвиг baseline
                                 </label>
                             </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Детекторы событий (events.detectors)</label>
+                            <div id="detectorsContainer" class="detectors-grid"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Детектор по умолчанию (events.default_detector)</label>
+                            <select id="defaultDetectorSelect" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Детекторы для сравнения (events.compare_detectors)</label>
+                            <div id="compareDetectorsContainer" class="compare-detectors"></div>
                         </div>
                         <div class="form-group">
                             <label>Таблица для событий (events.output_table) <span class="label-help">Опционально</span></label>
@@ -2453,6 +2525,7 @@
                     const minDurationEl = document.getElementById('minEventDuration');
                     if (minDurationEl) minDurationEl.value = config.events.min_event_duration_minutes;
                 }
+                applyDetectorsFromConfig(config.events);
             }
             
             // Fill thresholds
@@ -2576,6 +2649,300 @@
             return result;
         }
         
+        const AVAILABLE_DETECTORS = [
+            {
+                id: 'baseline_threshold',
+                label: 'Baseline Threshold',
+                type: 'threshold',
+                description: 'Динамические пороги на основе расчетного baseline',
+                defaultEnabled: true,
+                params: []
+            },
+            {
+                id: 'pyod_iforest',
+                label: 'PyOD Isolation Forest',
+                type: 'pyod_iforest',
+                description: 'Модель PyOD Isolation Forest для поиска выбросов',
+                defaultEnabled: false,
+                params: [
+                    { key: 'contamination', label: 'Доля выбросов', type: 'number', step: '0.01', min: '0', max: '0.5', default: '0.1' },
+                    { key: 'min_points', label: 'Мин. точек', type: 'number', min: '10', default: '15' }
+                ]
+            },
+            {
+                id: 'ruptures_binseg',
+                label: 'Ruptures Change Point',
+                type: 'ruptures',
+                description: 'Change-point анализ (Binseg) для поиска сдвигов baseline',
+                defaultEnabled: false,
+                params: [
+                    { key: 'penalty', label: 'Penalty', type: 'number', min: '1', default: '10' },
+                    { key: 'window', label: 'Window', type: 'number', min: '5', default: '10' }
+                ]
+            }
+        ];
+        
+        function renderDetectorControls() {
+            const container = document.getElementById('detectorsContainer');
+            if (!container) return;
+            container.innerHTML = '';
+            
+            AVAILABLE_DETECTORS.forEach(detector => {
+                const item = document.createElement('div');
+                item.className = 'detector-item';
+                item.dataset.detectorId = detector.id;
+                
+                const header = document.createElement('div');
+                header.className = 'detector-header';
+                
+                const label = document.createElement('label');
+                label.className = 'checkbox-group';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'detector-toggle';
+                checkbox.dataset.detectorId = detector.id;
+                checkbox.checked = detector.defaultEnabled || detector.id === 'baseline_threshold';
+                if (detector.id === 'baseline_threshold') {
+                    checkbox.disabled = true;
+                }
+                
+                const caption = document.createElement('span');
+                caption.textContent = detector.label;
+                
+                label.appendChild(checkbox);
+                label.appendChild(caption);
+                
+                header.appendChild(label);
+                
+                item.appendChild(header);
+                
+                if (detector.description) {
+                    const description = document.createElement('div');
+                    description.className = 'detector-description';
+                    description.textContent = detector.description;
+                    item.appendChild(description);
+                }
+                
+                if (detector.params && detector.params.length > 0) {
+                    const paramsWrapper = document.createElement('div');
+                    paramsWrapper.className = 'detector-params';
+                    
+                    detector.params.forEach(param => {
+                        const paramDiv = document.createElement('div');
+                        paramDiv.className = 'detector-param';
+                        const paramLabel = document.createElement('label');
+                        paramLabel.textContent = param.label;
+                        
+                        const input = document.createElement('input');
+                        input.type = param.type || 'text';
+                        input.dataset.paramKey = param.key;
+                        if (param.step) input.step = param.step;
+                        if (param.min !== undefined) input.min = param.min;
+                        if (param.max !== undefined) input.max = param.max;
+                        if (param.default !== undefined) input.value = param.default;
+                        
+                        paramLabel.appendChild(input);
+                        paramDiv.appendChild(paramLabel);
+                        paramsWrapper.appendChild(paramDiv);
+                    });
+                    
+                    item.appendChild(paramsWrapper);
+                }
+                
+                container.appendChild(item);
+            });
+            
+            const toggles = container.querySelectorAll('.detector-toggle');
+            toggles.forEach(toggle => {
+                toggle.addEventListener('change', () => {
+                    updateDetectorSelects();
+                });
+            });
+            
+            updateDetectorSelects();
+        }
+        
+        function getEnabledDetectors() {
+            const enabled = [];
+            AVAILABLE_DETECTORS.forEach(detector => {
+                const item = document.querySelector(`.detector-item[data-detector-id="${detector.id}"]`);
+                if (!item) return;
+                const toggle = item.querySelector('.detector-toggle');
+                const isEnabled = detector.id === 'baseline_threshold' ? true : (toggle ? toggle.checked : false);
+                if (!isEnabled) return;
+                
+                const params = {};
+                if (detector.params && detector.params.length > 0) {
+                    detector.params.forEach(param => {
+                        const input = item.querySelector(`input[data-param-key="${param.key}"]`);
+                        if (input && input.value !== '') {
+                            if (param.type === 'number') {
+                                params[param.key] = parseFloat(input.value);
+                            } else {
+                                params[param.key] = input.value;
+                            }
+                        }
+                    });
+                }
+                
+                enabled.push({
+                    id: detector.id,
+                    label: detector.label,
+                    type: detector.type,
+                    params: params
+                });
+            });
+            return enabled;
+        }
+        
+        function updateDetectorSelects() {
+            const enabled = getEnabledDetectors();
+            const defaultSelect = document.getElementById('defaultDetectorSelect');
+            const compareContainer = document.getElementById('compareDetectorsContainer');
+            if (!defaultSelect || !compareContainer) return;
+            
+            defaultSelect.innerHTML = '';
+            enabled.forEach(detector => {
+                const option = document.createElement('option');
+                option.value = detector.id;
+                option.textContent = detector.label;
+                defaultSelect.appendChild(option);
+            });
+            
+            if (enabled.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = '-- нет доступных детекторов --';
+                defaultSelect.appendChild(option);
+            }
+            
+            if (!enabled.some(detector => detector.id === defaultSelect.value) && enabled.length > 0) {
+                defaultSelect.value = enabled[0].id;
+            }
+            
+            compareContainer.innerHTML = '';
+            enabled.forEach(detector => {
+                const wrapper = document.createElement('label');
+                wrapper.className = 'checkbox-group';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = detector.id;
+                checkbox.className = 'compare-detector-checkbox';
+                const span = document.createElement('span');
+                span.textContent = detector.label;
+                wrapper.appendChild(checkbox);
+                wrapper.appendChild(span);
+                compareContainer.appendChild(wrapper);
+            });
+        }
+        
+        function collectDetectorsConfig() {
+            const enabled = getEnabledDetectors();
+            const detectorsConfig = {};
+            enabled.forEach(detector => {
+                const config = {
+                    type: detector.type,
+                    label: detector.label,
+                    enabled: true
+                };
+                if (detector.params && Object.keys(detector.params).length > 0) {
+                    config.params = detector.params;
+                }
+                detectorsConfig[detector.id] = config;
+            });
+            
+            const defaultSelect = document.getElementById('defaultDetectorSelect');
+            const defaultDetector = defaultSelect && defaultSelect.value ? defaultSelect.value : (enabled[0] ? enabled[0].id : 'baseline_threshold');
+            
+            const compareDetectors = [];
+            const compareCheckboxes = document.querySelectorAll('.compare-detector-checkbox');
+            compareCheckboxes.forEach(checkbox => {
+                if (checkbox.checked && checkbox.value !== defaultDetector) {
+                    compareDetectors.push(checkbox.value);
+                }
+            });
+            
+            return {
+                detectors: detectorsConfig,
+                defaultDetector,
+                compareDetectors
+            };
+        }
+        
+        function applyDetectorsFromConfig(eventsConfig) {
+            const container = document.getElementById('detectorsContainer');
+            if (!container) return;
+            
+            const toggles = container.querySelectorAll('.detector-toggle');
+            toggles.forEach(toggle => {
+                if (!toggle.disabled) {
+                    toggle.checked = false;
+                }
+            });
+            
+            let detectorsMap = {};
+            if (eventsConfig && eventsConfig.detectors) {
+                if (Array.isArray(eventsConfig.detectors)) {
+                    eventsConfig.detectors.forEach(det => {
+                        if (det && (det.id || det.name)) {
+                            detectorsMap[det.id || det.name] = det;
+                        }
+                    });
+                } else {
+                    detectorsMap = eventsConfig.detectors;
+                }
+            }
+            
+            AVAILABLE_DETECTORS.forEach(detector => {
+                const item = container.querySelector(`.detector-item[data-detector-id="${detector.id}"]`);
+                if (!item) return;
+                const toggle = item.querySelector('.detector-toggle');
+                const detConfig = detectorsMap ? detectorsMap[detector.id] : undefined;
+                if (toggle && !toggle.disabled) {
+                    toggle.checked = !!detConfig && detConfig.enabled !== false;
+                }
+                if (detector.id === 'baseline_threshold' && toggle) {
+                    toggle.checked = true;
+                }
+                if (detector.params && detector.params.length > 0) {
+                    detector.params.forEach(param => {
+                        const input = item.querySelector(`input[data-param-key="${param.key}"]`);
+                        if (!input) return;
+                        if (detConfig && detConfig.params && detConfig.params[param.key] !== undefined) {
+                            input.value = detConfig.params[param.key];
+                        } else if (param.default !== undefined) {
+                            input.value = param.default;
+                        } else {
+                            input.value = '';
+                        }
+                    });
+                }
+            });
+            
+            updateDetectorSelects();
+            
+            if (eventsConfig && eventsConfig.default_detector) {
+                const defaultSelect = document.getElementById('defaultDetectorSelect');
+                if (defaultSelect) {
+                    defaultSelect.value = eventsConfig.default_detector;
+                    if (!defaultSelect.value && defaultSelect.options.length > 0) {
+                        defaultSelect.value = defaultSelect.options[0].value;
+                    }
+                }
+            }
+            
+            if (eventsConfig && eventsConfig.compare_detectors) {
+                const compareSet = new Set(eventsConfig.compare_detectors);
+                const compareCheckboxes = document.querySelectorAll('.compare-detector-checkbox');
+                compareCheckboxes.forEach(checkbox => {
+                    checkbox.checked = compareSet.has(checkbox.value);
+                });
+            }
+        }
+        
+        renderDetectorControls();
+        
         function generateConfig() {
             const config = {
                 job: {
@@ -2650,6 +3017,17 @@
                 config.events.detect.push('degradation_start');
             }
             
+              const detectorsState = collectDetectorsConfig();
+              if (detectorsState.detectors && Object.keys(detectorsState.detectors).length > 0) {
+                  config.events.detectors = detectorsState.detectors;
+                  if (detectorsState.defaultDetector) {
+                      config.events.default_detector = detectorsState.defaultDetector;
+                  }
+                  if (detectorsState.compareDetectors && detectorsState.compareDetectors.length > 0) {
+                      config.events.compare_detectors = detectorsState.compareDetectors;
+                  }
+              }
+              
             // Add output tables if specified
             const eventsTable = document.getElementById('eventsOutputTable').value.trim();
             if (eventsTable) {

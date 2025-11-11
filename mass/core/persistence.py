@@ -96,6 +96,7 @@ class Persistence:
             `timestamp` Timestamp NOT NULL,
             `session_id` Utf8 NOT NULL,
             `event_type` Utf8 NOT NULL,
+            `detector_id` Utf8,
             `metric_name` Utf8 NOT NULL,
             `context_hash` Utf8 NOT NULL,
             `event_start_time` Timestamp NOT NULL,
@@ -111,7 +112,7 @@ class Persistence:
             `cluster_version` Utf8,
             `script_name` Utf8 NOT NULL,
             `context_json` Utf8,
-            PRIMARY KEY (`timestamp`, `session_id`, `event_type`, `metric_name`, `context_hash`)
+            PRIMARY KEY (`timestamp`, `session_id`, `event_type`, `metric_name`, `context_hash`, `detector_id`)
         )
         PARTITION BY HASH(`session_id`, `metric_name`)
         WITH (STORE = COLUMN)
@@ -200,6 +201,7 @@ class Persistence:
                 'timestamp': self._to_ydb_timestamp(event.get('timestamp', event.get('event_start_time'))),
                 'session_id': self.session_id,
                 'event_type': str(event['event_type']),
+                'detector_id': event.get('detector_id'),
                 'metric_name': str(event['metric_name']),
                 'context_hash': str(event['context_hash']),
                 'event_start_time': self._to_ydb_timestamp(event['event_start_time']),
@@ -225,6 +227,7 @@ class Persistence:
                 .add_column("timestamp", ydb.OptionalType(ydb.PrimitiveType.Timestamp))
                 .add_column("session_id", ydb.OptionalType(ydb.PrimitiveType.Utf8))
                 .add_column("event_type", ydb.OptionalType(ydb.PrimitiveType.Utf8))
+                .add_column("detector_id", ydb.OptionalType(ydb.PrimitiveType.Utf8))
                 .add_column("metric_name", ydb.OptionalType(ydb.PrimitiveType.Utf8))
                 .add_column("context_hash", ydb.OptionalType(ydb.PrimitiveType.Utf8))
                 .add_column("event_start_time", ydb.OptionalType(ydb.PrimitiveType.Timestamp))

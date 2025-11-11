@@ -428,6 +428,11 @@ class SummaryReportGenerator:
             # Add events
             for event in events:
                 event_type = event.get('event_type', 'unknown')
+                detector_label = event.get('detector_label')
+                if detector_label:
+                    event_type_display = f"{event_type} · {detector_label}"
+                else:
+                    event_type_display = event_type
                 severity = event.get('severity', 'medium').lower()
                 is_improvement = 'improvement' in event_type.lower()
                 
@@ -467,7 +472,7 @@ class SummaryReportGenerator:
                 html_content += f"""
                 <div class="event-item {event_class}">
                     <div class="event-main">
-                        <span class="event-type">{event_type}</span>
+                        <span class="event-type">{event_type_display}</span>
                         <span class="event-time">{start_time}</span>
                         <span class="event-metric">{value_str}</span>
                         <span class="event-change">{change_str}</span>

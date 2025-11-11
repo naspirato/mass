@@ -19,7 +19,7 @@ from .config_loader import ConfigLoader, ConfigError
 from .data_access import DataAccess
 from .preprocessing import Preprocessing
 from .baseline_calculator import BaselineCalculator
-from .event_detector import EventDetector
+from .detection_manager import DetectionManager
 from .persistence import Persistence
 from .visualization import EventVisualizer
 from .summary_report import SummaryReportGenerator
@@ -100,7 +100,7 @@ class AnalyticsJob:
         self.data_access = DataAccess(self.adapter, self.config)
         self.preprocessing = Preprocessing(self.config)
         self.baseline_calculator = BaselineCalculator(self.config)
-        self.event_detector = EventDetector(self.config)
+        self.detection_manager = DetectionManager(self.config)
         self.context_tracker = ContextTracker(self.config, self.preprocessing)
         
         # Initialize persistence only if not dry_run
@@ -229,6 +229,8 @@ class AnalyticsJob:
                                 'change_absolute': value,
                                 'change_relative': float('inf') if value > 0 else 0.0,
                                 'current_value': value,
+                                'detector_id': 'context_tracker',
+                                'detector_label': 'Context Tracker',
                             }
                             all_events.append(event_data)
                             print(f"  ⚠ New context detected: {context_json[:80]}... (value: {value})")
@@ -299,6 +301,8 @@ class AnalyticsJob:
                                         'change_absolute': 0.0,
                                         'change_relative': 0.0,
                                         'current_value': 0.0,
+                                        'detector_id': 'context_tracker',
+                                        'detector_label': 'Context Tracker',
                                     }
                                     all_events.append(event_data)
                                     print(f"  ✓ Disappeared context detected: {context_json[:80]}...")
@@ -320,12 +324,27 @@ class AnalyticsJob:
                 }
                 all_thresholds.append(threshold_data)
                 
-                # Detect events only in the filtered window (pass metric_name for direction detection)
-                events = self.event_detector.detect_events(series_for_events, baseline_result, metric_name=metric_name)
+                # Detect events using all configured detector strategies
+                detector_results = self.detection_manager.detect_all(
+                    series_for_events, baseline_result, metric_name=metric_name
+                )
+                default_detector_id = self.detection_manager.get_default_detector_id()
+                
+                default_detector_events: List[Dict[str, Any]] = []
+                detector_events_combined: List[Dict[str, Any]] = []
+                
+                for detector_result in detector_results:
+                    for raw_event in detector_result.events:
+                        event_copy = dict(raw_event)
+                        event_copy.setdefault('detector_id', detector_result.detector_id)
+                        event_copy.setdefault('detector_label', detector_result.detector_label)
+                        detector_events_combined.append(event_copy)
+                        if detector_result.detector_id == default_detector_id:
+                            default_detector_events.append(event_copy.copy())
                 
                 # For new contexts: if no events detected but it's a new context, create event anyway
                 # This ensures we always detect appearance of new contexts
-                if is_new_context and new_rule and len(events) == 0:
+                if is_new_context and new_rule and len(default_detector_events) == 0:
                     # New context appeared but no event detected by normal logic
                     # Create event to mark appearance of new context
                     if not series_for_events.empty:
@@ -350,7 +369,13 @@ class AnalyticsJob:
                             'change_relative': float('inf') if value > 0 else 0.0,
                             'current_value': value,
                         }
-                        events.append(event_data)
+                        event_data['detector_id'] = default_detector_id
+                        event_data['detector_label'] = next(
+                            (res.detector_label for res in detector_results if res.detector_id == default_detector_id),
+                            'Default Detector'
+                        )
+                        default_detector_events.append(event_data.copy())
+                        detector_events_combined.append(event_data.copy())
                         print(f"  ⚠ New context detected (with baseline): {context_json[:80]}... (value: {value})")
                 
                 # Debug logging for event detection
@@ -371,28 +396,29 @@ class AnalyticsJob:
                     else:
                         below_lower = 0
                     
-                    if len(events) == 0 and (above_upper > 0 or below_lower > 0):
+                    if len(default_detector_events) == 0 and (above_upper > 0 or below_lower > 0):
                         print(f"  Debug: {context_json[:60]}... baseline={baseline_val:.2f}, upper={upper}, lower={lower}, latest={latest_value:.2f}, above_upper={above_upper}, below_lower={below_lower}")
                 
                 # Add context info to events
-                for event in events:
+                for event in detector_events_combined:
                     event['metric_name'] = metric_name
                     event['context_hash'] = context_hash
                     event['context_json'] = context_json
                 
-                all_events.extend(events)
+                all_events.extend(detector_events_combined)
                 
                 # Store visualization data - always store for exploration mode (dry_run)
                 # For exploration, we want to see all groups even without events
                 # Use series_all for visualization to show full context, but events are only in the window
-                if events or self.dry_run:
+                if detector_events_combined or self.dry_run:
                     visualization_data.append({
                         'metric_name': metric_name,
                         'context_hash': context_hash,
                         'context_json': context_json,
                         'series': series_all,  # Show full series for context
                         'baseline_result': baseline_result,
-                        'events': events,  # Events are only in the filtered window
+                        'events': default_detector_events,  # Backward compatibility: default detector events
+                        'detector_results': [result.to_dict() for result in detector_results],
                         'variant_config': {
                             'baseline_method': baseline_result.get('baseline_method'),
                             'window_size': baseline_result.get('window_size'),

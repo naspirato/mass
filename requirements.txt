@@ -13,6 +13,7 @@ python-dateutil>=2.8.0
 # Note: Requires Python < 3.14 (numba dependency)
 adtk>=0.6.0
 pyod>=1.0.0
+ruptures>=1.1.7
 prophet>=1.1.0
 plotly>=5.0.0  # Required by prophet for interactive plots (optional but recommended)
 

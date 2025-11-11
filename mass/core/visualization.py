@@ -7,7 +7,7 @@ Generates plotly interactive charts for detected events
 
 import os
 import pandas as pd
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Set
 
 
 class EventVisualizer:
@@ -51,21 +51,18 @@ class EventVisualizer:
                     series = metric_data.get('series')
                     baseline_result = metric_data.get('baseline_result', {})
                     events = metric_data.get('events', [])
+                    detector_results = metric_data.get('detector_results', [])
                     metric_name = metric_data.get('metric_name', 'Unknown')
                     
-                    # Check if series is empty
                     if series is None or series.empty:
                         continue
                     
-                    # Create a single figure for this metric (no subplots)
                     fig = go.Figure()
                     
-                    # Get baseline series if available
                     baseline_series = baseline_result.get('baseline_series')
                     upper_threshold = baseline_result.get('upper_threshold')
                     lower_threshold = baseline_result.get('lower_threshold')
                     
-                    # Plot metric values - handle single point case
                     if len(series) > 0:
                         fig.add_trace(go.Scatter(
                             x=series.index,
@@ -76,7 +73,6 @@ class EventVisualizer:
                             marker=dict(size=8 if len(series) == 1 else 4)
                         ))
                     
-                    # Plot baseline if available
                     if baseline_series is not None and not baseline_series.empty:
                         fig.add_trace(go.Scatter(
                             x=baseline_series.index,
@@ -86,7 +82,6 @@ class EventVisualizer:
                             line=dict(color='green', width=2, dash='dash')
                         ))
                     
-                    # Plot thresholds
                     if upper_threshold is not None:
                         fig.add_trace(go.Scatter(
                             x=series.index,
@@ -105,57 +100,94 @@ class EventVisualizer:
                             line=dict(color='orange', width=1, dash='dot')
                         ))
                     
-                    # Highlight event periods for this metric
-                    for event in events:
-                        event_start = pd.to_datetime(event['event_start_time'])
-                        event_end = pd.to_datetime(event.get('event_end_time', event_start))
-                        event_type = event['event_type']
+                    if not detector_results:
+                        detector_results = [{
+                            'detector_id': 'baseline_threshold',
+                            'detector_label': 'Baseline Threshold',
+                            'detector_type': 'threshold',
+                            'events': events,
+                            'extras': {}
+                        }]
+                    
+                    color_palette = [
+                        ('rgba(229, 57, 53, 0.18)', '#d32f2f'),
+                        ('rgba(30, 136, 229, 0.18)', '#1e88e5'),
+                        ('rgba(102, 187, 106, 0.18)', '#43a047'),
+                        ('rgba(255, 167, 38, 0.18)', '#fb8c00'),
+                        ('rgba(156, 39, 176, 0.18)', '#8e24aa'),
+                        ('rgba(0, 121, 107, 0.18)', '#00796b'),
+                    ]
+                    
+                    color_lookup: Dict[str, Dict[str, str]] = {}
+                    legend_added: Set[str] = set()
+                    for idx_result, result in enumerate(detector_results):
+                        shade_color, marker_color = color_palette[idx_result % len(color_palette)]
+                        color_lookup[result['detector_id']] = {
+                            'shade': shade_color,
+                            'marker': marker_color,
+                            'label': result.get('detector_label', result['detector_id'])
+                        }
+                        if result['detector_id'] not in legend_added:
+                            fig.add_trace(go.Scatter(
+                                x=[None],
+                                y=[None],
+                                mode='markers',
+                                marker=dict(symbol='square', size=10, color=marker_color),
+                                showlegend=True,
+                                name=color_lookup[result['detector_id']]['label']
+                            ))
+                            legend_added.add(result['detector_id'])
+                    
+                    for detector_result in detector_results:
+                        detector_id = detector_result.get('detector_id', 'baseline_threshold')
+                        detector_label = detector_result.get('detector_label', detector_id)
+                        detector_events = detector_result.get('events', [])
+                        colors = color_lookup.get(detector_id, {
+                            'shade': 'rgba(255, 215, 64, 0.2)',
+                            'marker': '#fdd835',
+                            'label': detector_label
+                        })
                         
-                        # Color based on event type
-                        if 'degradation' in event_type:
-                            color = 'rgba(255, 0, 0, 0.2)'
-                        elif 'improvement' in event_type:
-                            color = 'rgba(0, 255, 0, 0.2)'
-                        else:
-                            color = 'rgba(255, 255, 0, 0.2)'
-                        
-                        # Add shaded region for event period
-                        fig.add_vrect(
-                            x0=event_start,
-                            x1=event_end,
-                            fillcolor=color,
-                            layer="below",
-                            line_width=0,
-                            annotation_text=f"{metric_name}: {event_type}",
-                            annotation_position="top left"
-                        )
-                        
-                        # Add marker at event start
-                        event_value = series.get(event_start, None)
-                        if event_value is None:
-                            # Find closest point
-                            closest_idx = series.index.get_indexer([event_start], method='nearest')[0]
-                            if closest_idx >= 0:
-                                event_value = series.iloc[closest_idx]
-                                event_time = series.index[closest_idx]
+                        for event in detector_events:
+                            event_start = pd.to_datetime(event['event_start_time'])
+                            event_end = pd.to_datetime(event.get('event_end_time', event_start))
+                            event_type = event.get('event_type', 'event')
+                            
+                            fig.add_vrect(
+                                x0=event_start,
+                                x1=event_end,
+                                fillcolor=colors['shade'],
+                                layer="below",
+                                line_width=0,
+                                annotation_text=f"{detector_label}: {event_type}",
+                                annotation_position="top left"
+                            )
+                            
+                            event_value = series.get(event_start, None)
+                            if event_value is None:
+                                closest_idx = series.index.get_indexer([event_start], method='nearest')[0]
+                                if closest_idx >= 0:
+                                    event_value = series.iloc[closest_idx]
+                                    event_time = series.index[closest_idx]
+                                else:
+                                    continue
                             else:
-                                continue
-                        else:
-                            event_time = event_start
-                        
-                        fig.add_trace(go.Scatter(
-                            x=[event_time],
-                            y=[event_value],
-                            mode='markers',
-                            name=f"{metric_name}: {event_type}",
-                            marker=dict(size=12, symbol='star', color='red' if 'degradation' in event_type else 'green'),
-                            showlegend=False
-                        ))
+                                event_time = event_start
+                            
+                            fig.add_trace(go.Scatter(
+                                x=[event_time],
+                                y=[event_value],
+                                mode='markers',
+                                name=f"{detector_label}: {event_type}",
+                                marker=dict(size=11, symbol='star', color=colors['marker'], line=dict(width=1, color='#ffffff')),
+                                showlegend=False
+                            ))
                     
                     # Add annotations about what couldn't be determined
                     annotations = []
                     
-                    if not events or len(events) == 0:
+                    total_events_found = sum(len(res.get('events', [])) for res in detector_results)
+                    if total_events_found == 0:
                         annotations.append(dict(
                             xref="paper", yref="paper",
                             x=0.5, y=0.98,
@@ -246,6 +278,7 @@ class EventVisualizer:
                         'baseline_series': baseline_series_dict,
                         'baseline_result': baseline_result_serializable,
                         'events': events_serializable,
+                        'detector_results': detector_results,
                         'variant_config': variant_config,
                         'timestamp': timestamp,
                         'job_name': job_name

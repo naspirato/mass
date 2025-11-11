@@ -237,6 +237,27 @@ class ConfigLoader:
             duration = events['min_event_duration_minutes']
             if not isinstance(duration, (int, float)) or duration < 0:
                 raise ConfigError("events.min_event_duration_minutes must be a non-negative number")
+        
+        detector_ids = {'baseline_threshold'}
+        if 'detectors' in events:
+            detector_ids.update(self._validate_event_detectors(events['detectors']))
+        
+        if 'default_detector' in events:
+            default_detector = events['default_detector']
+            if not isinstance(default_detector, str) or not default_detector:
+                raise ConfigError("events.default_detector must be a non-empty string")
+            if default_detector not in detector_ids:
+                raise ConfigError(f"events.default_detector '{default_detector}' is not defined in events.detectors")
+        
+        if 'compare_detectors' in events:
+            compare = events['compare_detectors']
+            if not isinstance(compare, list):
+                raise ConfigError("events.compare_detectors must be a list of detector ids")
+            for det in compare:
+                if not isinstance(det, str):
+                    raise ConfigError("events.compare_detectors must contain only string detector ids")
+                if det not in detector_ids:
+                    raise ConfigError(f"events.compare_detectors contains undefined detector '{det}'")
     
     def _validate_thresholds(self):
         """Validate thresholds section"""
@@ -245,6 +266,40 @@ class ConfigLoader:
         if 'keep_history' in thresholds:
             if not isinstance(thresholds['keep_history'], bool):
                 raise ConfigError("thresholds.keep_history must be a boolean")
+
+    def _validate_event_detectors(self, detectors_cfg: Any) -> set:
+        """Validate detectors configuration and return set of detector ids."""
+        detector_ids = set()
+        
+        def validate_single(det_id: str, det_cfg: Dict[str, Any]):
+            if not isinstance(det_id, str) or not det_id:
+                raise ConfigError("events.detectors entries must have a non-empty string identifier")
+            if not isinstance(det_cfg, dict):
+                raise ConfigError(f"events.detectors.{det_id} must be a dictionary")
+            if 'params' in det_cfg and not isinstance(det_cfg['params'], dict):
+                raise ConfigError(f"events.detectors.{det_id}.params must be a dictionary if provided")
+            for override_key in ('analytics', 'events', 'metric_direction'):
+                if override_key in det_cfg and not isinstance(det_cfg[override_key], dict):
+                    raise ConfigError(f"events.detectors.{det_id}.{override_key} must be a dictionary if provided")
+            if 'enabled' in det_cfg and not isinstance(det_cfg['enabled'], bool):
+                raise ConfigError(f"events.detectors.{det_id}.enabled must be a boolean if provided")
+            detector_ids.add(det_id)
+        
+        if isinstance(detectors_cfg, dict):
+            for det_id, det_cfg in detectors_cfg.items():
+                validate_single(det_id, det_cfg)
+        elif isinstance(detectors_cfg, list):
+            for det_cfg in detectors_cfg:
+                if not isinstance(det_cfg, dict):
+                    raise ConfigError("events.detectors list entries must be dictionaries")
+                det_id = det_cfg.get('id') or det_cfg.get('name')
+                if not det_id:
+                    raise ConfigError("events.detectors list entries must include 'id' field")
+                validate_single(det_id, det_cfg)
+        else:
+            raise ConfigError("events.detectors must be a dictionary or a list of detector definitions")
+        
+        return detector_ids
     
     def _validate_output(self):
         """Validate output section"""

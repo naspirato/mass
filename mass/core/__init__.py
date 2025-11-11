@@ -8,6 +8,7 @@ from .data_access import DataAccess
 from .preprocessing import Preprocessing
 from .baseline_calculator import BaselineCalculator
 from .event_detector import EventDetector
+from .detection_manager import DetectionManager
 from .persistence import Persistence
 from .visualization import EventVisualizer
 from .summary_report import SummaryReportGenerator
@@ -21,6 +22,7 @@ __all__ = [
     'Preprocessing',
     'BaselineCalculator',
     'EventDetector',
+    'DetectionManager',
     'Persistence',
     'EventVisualizer',
     'SummaryReportGenerator',
