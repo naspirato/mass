@@ -130,16 +130,36 @@ class EventDetector:
             min_rel_change = self.min_relative_change_default
         events = []
         
-        lower_threshold = baseline_result.get('lower_threshold')
-        if lower_threshold is None:
-            return events
-        
         baseline_series = baseline_result.get('baseline_series', pd.Series())
         if baseline_series.empty:
             return events
         
-        # Find points below threshold
-        below_threshold = series < lower_threshold
+        # Compute dynamic thresholds for each point based on baseline_series
+        sensitivity = baseline_result.get('sensitivity', 2.0)
+        
+        # Compute residuals to get std for threshold calculation
+        residuals = series - baseline_series
+        std_residuals = residuals.std()
+        if pd.isna(std_residuals) or std_residuals == 0:
+            std_residuals = series.std()
+            if pd.isna(std_residuals) or std_residuals == 0:
+                mean_val = abs(series.mean()) if not series.empty else 1.0
+                std_residuals = mean_val * 0.1
+        
+        # Compute dynamic lower threshold for each point
+        dynamic_lower_threshold = baseline_series - sensitivity * std_residuals
+        
+        # Align indices if needed
+        if not dynamic_lower_threshold.index.equals(series.index):
+            dynamic_lower_threshold = dynamic_lower_threshold.reindex(series.index, method='nearest')
+        
+        # Find points below dynamic threshold
+        below_threshold = series < dynamic_lower_threshold
+        
+        # Keep fixed threshold for event metadata (backward compatibility)
+        lower_threshold = baseline_result.get('lower_threshold')
+        if lower_threshold is None:
+            lower_threshold = float(dynamic_lower_threshold.iloc[-1]) if not dynamic_lower_threshold.empty else None
         
         # Debug: check how many points are below threshold
         num_below = below_threshold.sum()
@@ -193,16 +213,39 @@ class EventDetector:
             min_rel_change = self.min_relative_change_default
         events = []
         
-        upper_threshold = baseline_result.get('upper_threshold')
-        if upper_threshold is None:
-            return events
-        
         baseline_series = baseline_result.get('baseline_series', pd.Series())
         if baseline_series.empty:
             return events
         
-        # Find points above threshold
-        above_threshold = series > upper_threshold
+        # Compute dynamic thresholds for each point based on baseline_series
+        # This prevents issues when baseline "follows" degradation at the end
+        sensitivity = baseline_result.get('sensitivity', 2.0)
+        
+        # Compute residuals to get std for threshold calculation
+        residuals = series - baseline_series
+        std_residuals = residuals.std()
+        if pd.isna(std_residuals) or std_residuals == 0:
+            # Fallback to overall std
+            std_residuals = series.std()
+            if pd.isna(std_residuals) or std_residuals == 0:
+                mean_val = abs(series.mean()) if not series.empty else 1.0
+                std_residuals = mean_val * 0.1
+        
+        # Compute dynamic upper threshold for each point
+        # Use baseline_series[i] + sensitivity * std for each point i
+        dynamic_upper_threshold = baseline_series + sensitivity * std_residuals
+        
+        # Align indices if needed
+        if not dynamic_upper_threshold.index.equals(series.index):
+            dynamic_upper_threshold = dynamic_upper_threshold.reindex(series.index, method='nearest')
+        
+        # Find points above dynamic threshold
+        above_threshold = series > dynamic_upper_threshold
+        
+        # Keep fixed threshold for event metadata (backward compatibility)
+        upper_threshold = baseline_result.get('upper_threshold')
+        if upper_threshold is None:
+            upper_threshold = float(dynamic_upper_threshold.iloc[-1]) if not dynamic_upper_threshold.empty else None
         
         # Debug: check how many points are above threshold
         num_above = above_threshold.sum()
@@ -265,10 +308,24 @@ class EventDetector:
         # Align baseline with series index
         baseline_values = baseline_series.reindex(series.index, method='nearest')
         
-        # Calculate improvement threshold: baseline - min_absolute_change
-        # OR baseline * (1 - min_relative_change) - whichever is more restrictive
-        improvement_threshold_abs = baseline_values - min_abs_change
-        improvement_threshold_rel = baseline_values * (1 - min_rel_change)
+        # Compute residuals to get std for threshold calculation (account for volatility)
+        residuals = series - baseline_values
+        std_residuals = residuals.std()
+        if pd.isna(std_residuals) or std_residuals == 0:
+            # Fallback to overall std
+            std_residuals = series.std()
+            if pd.isna(std_residuals) or std_residuals == 0:
+                mean_val = abs(series.mean()) if not series.empty else 1.0
+                std_residuals = mean_val * 0.1
+        
+        # Get sensitivity for threshold calculation (same as degradation detection)
+        sensitivity = baseline_result.get('sensitivity', 2.0)
+        
+        # Calculate improvement threshold with volatility consideration
+        # Improvement threshold should account for natural data volatility
+        # Use sensitivity * std_residuals to avoid false positives from noise
+        improvement_threshold_abs = baseline_values - min_abs_change - sensitivity * std_residuals
+        improvement_threshold_rel = baseline_values * (1 - min_rel_change) - sensitivity * std_residuals
         # Use the more restrictive (lower) threshold
         improvement_threshold = pd.concat([improvement_threshold_abs, improvement_threshold_rel], axis=1).min(axis=1)
         
@@ -285,13 +342,37 @@ class EventDetector:
             if baseline_at_start is None:
                 continue
             
+            # Check baseline stability in the window around the event
+            # If baseline recently adapted, be more conservative
+            baseline_window_start = max(0, segment_start - self.window_size)
+            baseline_window_end = min(len(baseline_series), segment_end + 1)
+            baseline_window = baseline_series.iloc[baseline_window_start:baseline_window_end]
+            
+            baseline_std = baseline_window.std()
+            baseline_mean = baseline_window.mean()
+            
+            # Calculate baseline stability (0 = unstable, 1 = stable)
+            baseline_stability = 1.0 - (baseline_std / abs(baseline_mean)) if baseline_mean != 0 else 1.0
+            baseline_stability = max(0.0, min(1.0, baseline_stability))  # Clamp to [0, 1]
+            
+            # If baseline is unstable (recently adapted), increase requirements
+            # This prevents false positives after baseline adaptation to new levels
+            if baseline_stability < 0.8:  # Baseline is unstable (recently changed)
+                # Increase min requirements by 50% for unstable baseline
+                effective_min_rel_change = min_rel_change * 1.5
+                effective_min_abs_change = min_abs_change * 1.5
+            else:
+                effective_min_rel_change = min_rel_change
+                effective_min_abs_change = min_abs_change
+            
             change_absolute = float(segment_values.mean() - baseline_at_start)
             change_relative = abs(change_absolute / baseline_at_start) if baseline_at_start != 0 else 0
             
             # Check significance (change must be negative for improvement in negative metrics)
+            # Use effective thresholds that account for baseline stability
             if (change_absolute < 0 and  # Must be improvement (lower value)
-                abs(change_absolute) >= min_abs_change and 
-                change_relative >= min_rel_change):
+                abs(change_absolute) >= effective_min_abs_change and 
+                change_relative >= effective_min_rel_change):
                 
                 event = {
                     'event_type': 'improvement_start',
@@ -319,16 +400,36 @@ class EventDetector:
             min_rel_change = self.min_relative_change_default
         events = []
         
-        upper_threshold = baseline_result.get('upper_threshold')
-        if upper_threshold is None:
-            return events
-        
         baseline_series = baseline_result.get('baseline_series', pd.Series())
         if baseline_series.empty:
             return events
         
-        # Find points above threshold
-        above_threshold = series > upper_threshold
+        # Compute dynamic thresholds for each point based on baseline_series
+        sensitivity = baseline_result.get('sensitivity', 2.0)
+        
+        # Compute residuals to get std for threshold calculation
+        residuals = series - baseline_series
+        std_residuals = residuals.std()
+        if pd.isna(std_residuals) or std_residuals == 0:
+            std_residuals = series.std()
+            if pd.isna(std_residuals) or std_residuals == 0:
+                mean_val = abs(series.mean()) if not series.empty else 1.0
+                std_residuals = mean_val * 0.1
+        
+        # Compute dynamic upper threshold for each point
+        dynamic_upper_threshold = baseline_series + sensitivity * std_residuals
+        
+        # Align indices if needed
+        if not dynamic_upper_threshold.index.equals(series.index):
+            dynamic_upper_threshold = dynamic_upper_threshold.reindex(series.index, method='nearest')
+        
+        # Find points above dynamic threshold
+        above_threshold = series > dynamic_upper_threshold
+        
+        # Keep fixed threshold for event metadata (backward compatibility)
+        upper_threshold = baseline_result.get('upper_threshold')
+        if upper_threshold is None:
+            upper_threshold = float(dynamic_upper_threshold.iloc[-1]) if not dynamic_upper_threshold.empty else None
         
         # Debug: check how many points are above threshold
         num_above = above_threshold.sum()
@@ -727,33 +828,68 @@ class EventDetector:
             # For sparse/irregular data: if we have many points, relax duration requirement
             # If we have enough points (>= hysteresis_points * 2), we accept shorter durations
             min_duration = self.min_event_duration
-            if num_points >= self.hysteresis_points * 2:
-                # For events with many points, reduce duration requirement by 50%
-                min_duration = self.min_event_duration * 0.5
-            
-            # Also relax duration for very significant changes (>= 20% relative change)
-            # BUT: only if we have enough points and it's not a single outlier
+            event_type = event.get('event_type', '')
             event_change_relative = abs(event.get('change_relative', 0))
-            if event_change_relative >= 0.20 and not is_single_outlier and num_points >= self.hysteresis_points * 2:
-                # Significant changes should be detected even if duration is short
-                # But only if we have enough points (not a single outlier)
-                min_duration = min_duration * 0.5  # Reduce to 50% (was 30%, too aggressive)
+            
+            # For improvements, be more strict about duration requirements
+            # Improvements are more prone to false positives from noise
+            if event_type == 'improvement_start':
+                # For improvements, require more points before relaxing duration
+                if num_points >= self.hysteresis_points * 3:  # More strict: 3x instead of 2x
+                    # For events with many points, reduce duration requirement by 50%
+                    min_duration = self.min_event_duration * 0.5
+                else:
+                    # For improvements with fewer points, don't relax duration
+                    min_duration = self.min_event_duration
+                
+                # For improvements, be more conservative about relaxing for significant changes
+                # Only relax if we have enough points AND it's not a single outlier
+                if event_change_relative >= 0.20 and not is_single_outlier and num_points >= self.hysteresis_points * 3:
+                    # Significant improvements need more points before relaxing duration
+                    min_duration = min_duration * 0.5
+            else:
+                # For degradations and other events, use original logic
+                if num_points >= self.hysteresis_points * 2:
+                    # For events with many points, reduce duration requirement by 50%
+                    min_duration = self.min_event_duration * 0.5
+                
+                # Also relax duration for very significant changes (>= 20% relative change)
+                # BUT: only if we have enough points and it's not a single outlier
+                if event_change_relative >= 0.20 and not is_single_outlier and num_points >= self.hysteresis_points * 2:
+                    # Significant changes should be detected even if duration is short
+                    # But only if we have enough points (not a single outlier)
+                    min_duration = min_duration * 0.5  # Reduce to 50% (was 30%, too aggressive)
             
             if duration < min_duration:
                 # Still check if we have enough points to compensate
-                # For very significant changes, accept even with fewer points, but not for single outliers
-                required_points = self.hysteresis_points * 3
-                if event_change_relative >= 0.20 and not is_single_outlier:
-                    # Very significant changes need at least 2x hysteresis_points (not just 1x)
-                    required_points = self.hysteresis_points * 2
+                # For improvements, require more points
+                if event_type == 'improvement_start':
+                    required_points = self.hysteresis_points * 3  # More strict for improvements
+                    if event_change_relative >= 0.20 and not is_single_outlier:
+                        # Very significant improvements still need at least 2x hysteresis_points
+                        required_points = self.hysteresis_points * 2
+                else:
+                    required_points = self.hysteresis_points * 3
+                    if event_change_relative >= 0.20 and not is_single_outlier:
+                        # Very significant changes need at least 2x hysteresis_points (not just 1x)
+                        required_points = self.hysteresis_points * 2
+                
                 if num_points < required_points:
                     continue
             
             # Apply hysteresis: require multiple consecutive points
-            # For single outliers, require at least 2 points even if hysteresis_points = 1
-            min_points_required = self.hysteresis_points
-            if is_single_outlier:
-                min_points_required = max(2, self.hysteresis_points)  # At least 2 points for outliers
+            # For improvements, be more strict
+            if event_type == 'improvement_start':
+                # For improvements, require at least 2x hysteresis_points (more strict)
+                min_points_required = max(self.hysteresis_points * 2, 3)  # At least 3 points for improvements
+                if is_single_outlier:
+                    min_points_required = max(3, self.hysteresis_points * 2)  # Even more strict for outliers
+            else:
+                # For other events, use original logic
+                min_points_required = self.hysteresis_points
+                if is_single_outlier:
+                    min_points_required = max(2, self.hysteresis_points)  # At least 2 points for outliers
+            
             if num_points < min_points_required:
                 continue
             

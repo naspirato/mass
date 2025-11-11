@@ -27,7 +27,7 @@ class TestEventDetection(unittest.TestCase):
         self.base_config = {
             'analytics': {
                 'baseline_method': 'rolling_mean',
-                'window_size': 7,
+                'window_size': 20,  # Увеличено для более стабильного baseline
                 'sensitivity': 2.0,
                 'min_absolute_change': 10,
                 'min_relative_change': 0.1,
@@ -37,6 +37,9 @@ class TestEventDetection(unittest.TestCase):
             'events': {
                 'detect': ['degradation_start', 'improvement_start'],
                 'min_event_duration_minutes': 30
+            },
+            'metric_direction': {
+                'default': 'negative'  # duration_ms - negative метрика (больше = хуже)
             }
         }
     
@@ -49,10 +52,12 @@ class TestEventDetection(unittest.TestCase):
         return pd.Series(values, index=dates)
     
     def test_degradation_detection(self):
-        """Тест обнаружения деградации (падение значений ниже порога)"""
-        # Создаем данные: стабильные значения, затем резкое падение
-        stable_values = [100.0] * 20
-        degraded_values = [50.0] * 10  # Падение на 50%
+        """Тест обнаружения деградации для negative метрики (рост значений выше порога)"""
+        # Для negative метрики (duration_ms): деградация = РОСТ значения
+        # Создаем данные: стабильные значения, затем резкий рост
+        # Нужно больше стабильных данных для стабильного baseline
+        stable_values = [100.0] * 50
+        degraded_values = [200.0] * 20  # Рост на 100% = деградация для negative метрики
         values = stable_values + degraded_values
         
         series = self._create_time_series(values)
@@ -63,26 +68,31 @@ class TestEventDetection(unittest.TestCase):
         
         # Обнаруживаем события
         event_detector = EventDetector(self.base_config)
-        events = event_detector.detect_events(series, baseline_result)
+        events = event_detector.detect_events(series, baseline_result, metric_name='duration_ms')
         
         # Проверяем, что обнаружена деградация
         degradation_events = [e for e in events if e['event_type'] == 'degradation_start']
         self.assertGreater(len(degradation_events), 0, "Должна быть обнаружена деградация")
         
         # Проверяем корректность данных события
+        # Для negative метрики: деградация = рост значения (больше baseline)
         event = degradation_events[0]
-        self.assertLess(event['current_value'], event['baseline_before'], 
-                         "Текущее значение должно быть меньше baseline")
-        self.assertLess(event['change_absolute'], 0, 
-                       "Изменение должно быть отрицательным")
-        print(f"✓ Обнаружена деградация: {event['change_relative']*100:.1f}% падение")
+        self.assertGreater(event['current_value'], event['baseline_before'], 
+                         "Для negative метрики деградация = рост значения (больше baseline)")
+        self.assertGreater(event['change_absolute'], 0, 
+                       "Для negative метрики деградация = положительное изменение")
+        print(f"✓ Обнаружена деградация: {event['change_relative']*100:.1f}% рост")
     
     def test_improvement_detection(self):
-        """Тест обнаружения улучшения (рост значений выше порога)"""
-        # Создаем данные: стабильные значения, затем резкий рост
-        stable_values = [100.0] * 20
-        improved_values = [200.0] * 10  # Рост на 100%
-        values = stable_values + improved_values
+        """Тест обнаружения улучшения для negative метрики (падение значений ниже порога)"""
+        # Для negative метрики (duration_ms): улучшение = ПАДЕНИЕ значения
+        # Создаем данные: стабильные значения, затем резкое падение
+        # Нужно много стабильных данных, чтобы baseline не успел адаптироваться к улучшению
+        # Используем небольшой шум для более реалистичного сценария
+        np.random.seed(42)
+        stable_values = 100.0 + np.random.normal(0, 2, 150)  # Много стабильных данных с шумом
+        improved_values = 50.0 + np.random.normal(0, 2, 30)  # Падение на 50% = улучшение, больше точек для строгих требований
+        values = list(stable_values) + list(improved_values)
         
         series = self._create_time_series(values)
         
@@ -92,19 +102,20 @@ class TestEventDetection(unittest.TestCase):
         
         # Обнаруживаем события
         event_detector = EventDetector(self.base_config)
-        events = event_detector.detect_events(series, baseline_result)
+        events = event_detector.detect_events(series, baseline_result, metric_name='duration_ms')
         
         # Проверяем, что обнаружено улучшение
         improvement_events = [e for e in events if e['event_type'] == 'improvement_start']
         self.assertGreater(len(improvement_events), 0, "Должно быть обнаружено улучшение")
         
         # Проверяем корректность данных события
+        # Для negative метрики: улучшение = падение значения (меньше baseline)
         event = improvement_events[0]
-        self.assertGreater(event['current_value'], event['baseline_before'],
-                          "Текущее значение должно быть больше baseline")
-        self.assertGreater(event['change_absolute'], 0,
-                          "Изменение должно быть положительным")
-        print(f"✓ Обнаружено улучшение: {event['change_relative']*100:.1f}% рост")
+        self.assertLess(event['current_value'], event['baseline_before'],
+                          "Для negative метрики улучшение = падение значения (меньше baseline)")
+        self.assertLess(event['change_absolute'], 0,
+                          "Для negative метрики улучшение = отрицательное изменение")
+        print(f"✓ Обнаружено улучшение: {event['change_relative']*100:.1f}% падение")
     
     def test_no_false_positives(self):
         """Тест отсутствия ложных срабатываний при стабильных данных"""

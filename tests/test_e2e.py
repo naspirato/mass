@@ -28,9 +28,9 @@ class TestE2EAnalytics(unittest.TestCase):
     
     def setUp(self):
         """Настройка тестового окружения"""
-        # test_data is in project root
-        project_root = os.path.dirname(os.path.dirname(__file__))
-        self.test_data_dir = os.path.join(project_root, 'test_data')
+        # test_data is in tests directory
+        tests_dir = os.path.dirname(__file__)
+        self.test_data_dir = os.path.join(tests_dir, 'test_data')
         os.makedirs(self.test_data_dir, exist_ok=True)
     
     def _create_test_config(self, config_overrides=None):
@@ -60,6 +60,9 @@ class TestE2EAnalytics(unittest.TestCase):
             'events': {
                 'detect': ['degradation_start', 'improvement_start'],
                 'min_event_duration_minutes': 30  # Увеличено для лучшей фильтрации кратковременных событий
+            },
+            'metric_direction': {
+                'default': 'negative'  # duration_ms - negative метрика (больше = хуже)
             },
             'thresholds': {
                 'keep_history': True
@@ -93,14 +96,14 @@ class TestE2EAnalytics(unittest.TestCase):
         filepath = os.path.join(self.test_data_dir, filename)
         
         if data_scenario == 'degradation':
-            # Сценарий: стабильные значения, затем деградация
-            # Создаем больше данных для baseline (минимум window_size * 2 точек)
+            # Сценарий: стабильные значения, затем ДЕГРАДАЦИЯ
+            # Для duration_ms (negative метрика): деградация = РОСТ значения (больше = хуже)
             dates = pd.date_range(start=datetime.now() - timedelta(days=5), periods=120, freq='1h')
-            # Стабильные значения для baseline, затем резкое падение
             np.random.seed(42)
-            stable_noise = np.random.normal(0, 2, 100)  # Увеличено для более стабильного baseline
-            degraded_noise = np.random.normal(0, 2, 20)  # Уменьшено для более четкой деградации
-            values = list(100.0 + stable_noise) + list(50.0 + degraded_noise)  # Падение на 50%
+            stable_noise = np.random.normal(0, 2, 100)
+            degraded_noise = np.random.normal(0, 2, 20)
+            # ДЕГРАДАЦИЯ: рост с 100 до 200 (больше = хуже для duration_ms)
+            values = list(100.0 + stable_noise) + list(200.0 + degraded_noise)
             data = {
                 'ts': dates,
                 'operation_type': ['scan_query'] * 120,
@@ -110,13 +113,14 @@ class TestE2EAnalytics(unittest.TestCase):
             }
         
         elif data_scenario == 'improvement':
-            # Сценарий: стабильные значения, затем улучшение
+            # Сценарий: стабильные значения, затем УЛУЧШЕНИЕ
+            # Для duration_ms (negative метрика): улучшение = ПАДЕНИЕ значения (меньше = лучше)
             dates = pd.date_range(start=datetime.now() - timedelta(days=5), periods=120, freq='1h')
-            # Стабильные значения для baseline, затем резкий рост
             np.random.seed(42)
-            stable_noise = np.random.normal(0, 2, 100)  # Увеличено для более стабильного baseline
-            improved_noise = np.random.normal(0, 2, 20)  # Уменьшено для более четкого улучшения
-            values = list(100.0 + stable_noise) + list(200.0 + improved_noise)  # Рост на 100%
+            stable_noise = np.random.normal(0, 2, 100)
+            improved_noise = np.random.normal(0, 2, 20)
+            # УЛУЧШЕНИЕ: падение с 100 до 50 (меньше = лучше для duration_ms)
+            values = list(100.0 + stable_noise) + list(50.0 + improved_noise)
             data = {
                 'ts': dates,
                 'operation_type': ['scan_query'] * 120,
@@ -210,12 +214,14 @@ class TestE2EAnalytics(unittest.TestCase):
             baseline_calc = BaselineCalculator(config)
             baseline_result = baseline_calc.compute_baseline_and_thresholds(series)
             
-            # Detect events
+            # Get metric name BEFORE detecting events (как в реальном коде analytics_job.py)
+            metric_name = group_key[0]
+            
+            # Detect events - ПЕРЕДАЕМ metric_name (как в реальном коде analytics_job.py:318)
             event_detector = EventDetector(config)
-            events = event_detector.detect_events(series, baseline_result)
+            events = event_detector.detect_events(series, baseline_result, metric_name=metric_name)
             
             # Prepare event data
-            metric_name = group_key[0]
             context_values = preprocessing.extract_context_from_group_key(group_key)
             
             for event in events:
@@ -273,14 +279,15 @@ class TestE2EAnalytics(unittest.TestCase):
                              "Должна быть обнаружена деградация производительности")
         
         # Проверяем корректность события (если найдено)
+        # Для duration_ms (negative метрика): деградация = рост значения
         if len(degradation_events) > 0:
             event = degradation_events[0]
-            self.assertLess(event['current_value'], event['baseline_before'],
-                           "Текущее значение должно быть меньше baseline")
-            self.assertLess(event['change_absolute'], 0,
-                           "Изменение должно быть отрицательным")
+            self.assertGreater(event['current_value'], event['baseline_before'],
+                           "Для negative метрики деградация = рост значения (больше baseline)")
+            self.assertGreater(event['change_absolute'], 0,
+                           "Для negative метрики деградация = положительное изменение")
             print(f"✓ E2E тест деградации: обнаружено {len(degradation_events)} событий, "
-                  f"падение на {abs(event['change_relative']*100):.1f}%")
+                  f"рост на {event['change_relative']*100:.1f}%")
         else:
             # Проверяем, что система работает корректно (пороги вычислены)
             print(f"✓ E2E тест деградации: система работает, пороги вычислены, "
@@ -321,14 +328,15 @@ class TestE2EAnalytics(unittest.TestCase):
                               "Должно быть обнаружено улучшение производительности")
         
         # Проверяем корректность события (если найдено)
+        # Для duration_ms (negative метрика): улучшение = падение значения
         if len(improvement_events) > 0:
             event = improvement_events[0]
-            self.assertGreater(event['current_value'], event['baseline_before'],
-                              "Текущее значение должно быть больше baseline")
-            self.assertGreater(event['change_absolute'], 0,
-                              "Изменение должно быть положительным")
+            self.assertLess(event['current_value'], event['baseline_before'],
+                          "Для negative метрики улучшение = падение значения (меньше baseline)")
+            self.assertLess(event['change_absolute'], 0,
+                          "Для negative метрики улучшение = отрицательное изменение")
             print(f"✓ E2E тест улучшения: обнаружено {len(improvement_events)} событий, "
-                  f"рост на {event['change_relative']*100:.1f}%")
+                  f"падение на {abs(event['change_relative']*100):.1f}%")
         else:
             # Проверяем, что система работает корректно (пороги вычислены)
             print(f"✓ E2E тест улучшения: система работает, пороги вычислены, "

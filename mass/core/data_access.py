@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
 import pandas as pd
+import os
+import pickle
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
+from pathlib import Path
 from ..adapters.base import DataAdapter
 
 
@@ -235,4 +238,88 @@ class DataAccess:
                 summary['context_combinations'] = df[context_cols].drop_duplicates().shape[0]
         
         return summary
+    
+    def save_data_to_file(self, df: pd.DataFrame, file_path: str, format: str = 'parquet') -> str:
+        """
+        Save DataFrame to file for later use
+        
+        Args:
+            df: DataFrame to save
+            file_path: Path to save file (directory will be created if needed)
+            format: Format to save ('parquet', 'csv', or 'pickle')
+            
+        Returns:
+            Path to saved file
+        """
+        file_path = Path(file_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        if format == 'parquet':
+            # Parquet is most efficient for large data
+            if not file_path.suffix:
+                file_path = file_path.with_suffix('.parquet')
+            try:
+                df.to_parquet(file_path, index=False, engine='pyarrow')
+            except ImportError:
+                # Fallback to CSV if pyarrow is not available
+                import warnings
+                warnings.warn("pyarrow not available, falling back to CSV format")
+                file_path = file_path.with_suffix('.csv')
+                df.to_csv(file_path, index=False, encoding='utf-8')
+        elif format == 'csv':
+            if not file_path.suffix:
+                file_path = file_path.with_suffix('.csv')
+            df.to_csv(file_path, index=False, encoding='utf-8')
+        elif format == 'pickle':
+            if not file_path.suffix:
+                file_path = file_path.with_suffix('.pkl')
+            with open(file_path, 'wb') as f:
+                pickle.dump(df, f)
+        else:
+            raise ValueError(f"Unsupported format: {format}. Use 'parquet', 'csv', or 'pickle'")
+        
+        return str(file_path)
+    
+    def load_data_from_file(self, file_path: str) -> pd.DataFrame:
+        """
+        Load DataFrame from file
+        
+        Args:
+            file_path: Path to file (supports parquet, csv, pickle)
+            
+        Returns:
+            DataFrame with loaded data
+        """
+        file_path = Path(file_path)
+        
+        if not file_path.exists():
+            raise FileNotFoundError(f"Data file not found: {file_path}")
+        
+        # Determine format from extension
+        if file_path.suffix == '.parquet':
+            try:
+                df = pd.read_parquet(file_path, engine='pyarrow')
+            except ImportError:
+                raise ImportError("pyarrow is required to read parquet files. Install it with: pip install pyarrow")
+        elif file_path.suffix == '.csv':
+            df = pd.read_csv(file_path, encoding='utf-8')
+            # Convert timestamp field back to datetime if it exists
+            timestamp_field = self.config.get('timestamp_field')
+            if timestamp_field and timestamp_field in df.columns:
+                df[timestamp_field] = pd.to_datetime(df[timestamp_field])
+        elif file_path.suffix in ['.pkl', '.pickle']:
+            with open(file_path, 'rb') as f:
+                df = pickle.load(f)
+        else:
+            raise ValueError(f"Unsupported file format: {file_path.suffix}. Use .parquet, .csv, or .pkl")
+        
+        # Validate required columns
+        self._validate_dataframe(df)
+        
+        # Sort by timestamp
+        timestamp_field = self.config.get('timestamp_field')
+        if timestamp_field and timestamp_field in df.columns:
+            df = df.sort_values(by=timestamp_field).reset_index(drop=True)
+        
+        return df
 

@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MASS - Metric Analytic Super System</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <style>
         * {
             margin: 0;
@@ -311,7 +313,7 @@
             <p>Конструктор конфигураций и запуск аналитики метрик</p>
             
             <!-- Mode Switcher -->
-            <div style="margin-top: 6px; display: flex; gap: 8px; justify-content: center; align-items: center;">
+            <div style="margin-top: 6px; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap;">
                 <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; background: rgba(255,255,255,0.2); padding: 5px 12px; border-radius: 5px; font-size: 13px;">
                     <input type="radio" name="mode" value="generate" checked onchange="switchMode(this.value)" style="width: auto;">
                     <span>🆕 Генерация нового конфига</span>
@@ -320,15 +322,25 @@
                     <input type="radio" name="mode" value="edit" onchange="switchMode(this.value)" style="width: auto;">
                     <span>✏️ Редактирование существующего</span>
                 </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; background: rgba(255,255,255,0.2); padding: 5px 12px; border-radius: 5px; font-size: 13px;">
+                    <input type="radio" name="mode" value="explore" onchange="switchMode(this.value)" style="width: auto;">
+                    <span>🔬 Исследование</span>
+                </label>
             </div>
             
-            <!-- File Loader (only in edit mode) -->
-            <div id="fileLoader" style="display: none; margin-top: 6px;">
-                <label style="display: inline-block; background: rgba(255,255,255,0.9); color: #333; padding: 6px 15px; border-radius: 5px; cursor: pointer; font-weight: 500; font-size: 13px;">
-                    📁 Загрузить YAML файл
-                    <input type="file" id="yamlFileInput" accept=".yaml,.yml" style="display: none;" onchange="loadYamlFile(event)">
-                </label>
-                <span id="fileName" style="margin-left: 12px; color: rgba(255,255,255,0.9); font-size: 13px;"></span>
+            <!-- File Loader (only in edit/explore mode) -->
+            <div id="fileLoader" style="display: none; margin-top: 8px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 6px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <label style="display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.95); color: #333; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 13px; white-space: nowrap;" onmouseover="this.style.background='white';" onmouseout="this.style.background='rgba(255,255,255,0.95)';">
+                        📁 Загрузить файл
+                        <input type="file" id="yamlFileInput" accept=".yaml,.yml" style="display: none;" onchange="loadYamlFile(event)">
+                    </label>
+                    <span style="color: rgba(255,255,255,0.6); font-size: 12px;">или</span>
+                    <select id="configsSelect" onchange="loadConfigFromSelect()" style="flex: 1; min-width: 200px; padding: 6px 10px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.95); color: #333; font-size: 13px; cursor: pointer;">
+                        <option value="">Выберите конфиг из configs/...</option>
+                    </select>
+                </div>
+                <span id="fileName" style="display: block; margin-top: 6px; padding: 4px 8px; color: rgba(255,255,255,0.9); font-size: 12px; min-height: 16px;"></span>
             </div>
         </div>
         
@@ -613,6 +625,109 @@
                 <div class="preview" id="preview">Заполните форму и нажмите "Сгенерировать конфиг"</div>
                 <button type="button" class="btn-copy" onclick="copyToClipboard()">📋 Копировать в буфер обмена</button>
             </div>
+            
+            <!-- Explore Section (hidden by default) -->
+            <div id="exploreSection" class="form-section" style="display: none; grid-column: 1 / -1;">
+                <div class="section-title">🔬 Режим исследования</div>
+                <p style="color: #666; margin-bottom: 20px; line-height: 1.6;">
+                    В этом режиме вы можете запустить аналитику с разными настройками на одних и тех же данных 
+                    и сравнить результаты. Система автоматически создаст несколько вариантов конфигурации с разными 
+                    параметрами аналитики.
+                </p>
+                
+                <div class="form-group">
+                    <label>Базовый конфиг <span class="label-help">Выберите конфиг, на основе которого будут созданы варианты</span></label>
+                    <select id="exploreBaseConfig" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                        <option value="">Выберите конфиг...</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" style="margin-top: 20px; padding: 15px; background: #e7f3ff; border-radius: 6px; border-left: 4px solid #2196F3;">
+                    <label style="font-weight: 600; color: #1976D2; margin-bottom: 10px; display: block;">💾 Шаг 1: Выбор данных</label>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 8px; font-size: 14px; color: #555;">Сохраненные данные:</label>
+                        <select id="savedDataSelect" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 10px;" onchange="onSavedDataSelected()">
+                            <option value="">Выберите сохраненные данные или загрузите новые...</option>
+                        </select>
+                        <button type="button" class="btn-generate" onclick="loadSavedDataList()" style="width: 100%; margin-bottom: 10px; background: #9c27b0;">
+                            🔄 Обновить список
+                        </button>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+                        <button type="button" class="btn-generate" onclick="loadAndSaveData()" id="loadDataBtn" style="width: 100%;">
+                            📥 Загрузить новые данные из источника
+                        </button>
+                    </div>
+                    
+                    <div id="dataStatus" style="display: none; padding: 10px; background: #d4edda; border-radius: 6px; margin-top: 10px;">
+                        <span id="dataStatusText"></span>
+                    </div>
+                    <div style="margin-left: 0; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+                        Выберите сохраненные данные из списка или загрузите новые из источника. Затем запустите исследование с разными параметрами.
+                    </div>
+                </div>
+                
+                <div class="section-title" style="margin-top: 30px; font-size: 18px;">⚙️ Настройки вариантов</div>
+                
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="varyBaselineMethod" checked>
+                        <span>Варьировать метод baseline</span>
+                    </label>
+                    <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+                        Будет создано 3 варианта: rolling_mean, median, zscore
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="varyWindowSize" checked>
+                        <span>Варьировать размер окна (window_size)</span>
+                    </label>
+                    <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+                        Будет создано 3 варианта: 7, 14, 30 точек
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="varySensitivity" checked>
+                        <span>Варьировать чувствительность (sensitivity)</span>
+                    </label>
+                    <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+                        Будет создано 3 варианта: 1.5, 2.0, 2.5
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="varyAdaptiveThreshold">
+                        <span>Варьировать адаптивные пороги (adaptive_threshold)</span>
+                    </label>
+                    <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+                        Будет создано 2 варианта: true, false
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 6px; border-left: 4px solid #ffc107;">
+                    <strong>ℹ️ Информация:</strong> Все варианты будут запущены параллельно. 
+                    Общее количество вариантов = произведение выбранных параметров. 
+                    Например, если выбрано 3 параметра с 3 вариантами каждый, будет создано до 27 вариантов.
+                </div>
+                
+                <button type="button" class="btn-generate" onclick="runExploration()" id="runExplorationBtn" style="margin-top: 20px;" disabled>
+                    🚀 Шаг 2: Запустить исследование
+                </button>
+                
+                <div id="exploreStatus" style="display: none; margin-top: 20px; padding: 15px; border-radius: 6px;"></div>
+                
+                <div id="exploreResults" style="margin-top: 30px; display: none;">
+                    <div class="section-title">📊 Результаты сравнения</div>
+                    <div id="exploreResultsContent" style="margin-top: 20px;"></div>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -622,14 +737,1031 @@
         function switchMode(mode) {
             currentMode = mode;
             const fileLoader = document.getElementById('fileLoader');
-            if (mode === 'edit') {
+            const formSection = document.querySelector('.form-section');
+            const previewSection = document.querySelector('.preview-section');
+            
+            if (mode === 'edit' || mode === 'explore') {
                 fileLoader.style.display = 'block';
+                // Load list of configs from configs/ directory
+                loadConfigsList();
             } else {
                 fileLoader.style.display = 'none';
                 // Clear loaded file info
                 document.getElementById('fileName').textContent = '';
                 document.getElementById('yamlFileInput').value = '';
             }
+            
+            // Show/hide explore UI
+            const exploreSection = document.getElementById('exploreSection');
+            if (mode === 'explore') {
+                if (exploreSection) {
+                    exploreSection.style.display = 'block';
+                }
+                if (formSection) formSection.style.display = 'none';
+                if (previewSection) previewSection.style.display = 'none';
+                // Load saved data list when entering explore mode
+                loadSavedDataList();
+            } else {
+                if (exploreSection) {
+                    exploreSection.style.display = 'none';
+                }
+                if (formSection) formSection.style.display = 'block';
+                if (previewSection) previewSection.style.display = 'block';
+            }
+        }
+        
+        function loadConfigsList() {
+            // Load list of available configs from API
+            fetch('/api/configs')
+                .then(response => response.json())
+                .then(data => {
+                    const select = document.getElementById('configsSelect');
+                    const exploreSelect = document.getElementById('exploreBaseConfig');
+                    
+                    // Clear existing options except the first one
+                    const defaultOption = '<option value="">Выберите конфиг из configs/...</option>';
+                    if (select) {
+                        select.innerHTML = defaultOption;
+                    }
+                    if (exploreSelect) {
+                        exploreSelect.innerHTML = '<option value="">Выберите конфиг...</option>';
+                    }
+                    
+                    // Add configs to both selects
+                    if (data.configs && data.configs.length > 0) {
+                        data.configs.forEach(config => {
+                            const option = document.createElement('option');
+                            option.value = config.path;
+                            option.textContent = config.name;
+                            if (select) select.appendChild(option.cloneNode(true));
+                            if (exploreSelect) exploreSelect.appendChild(option);
+                        });
+                    } else {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = 'Нет доступных конфигов';
+                        option.disabled = true;
+                        if (select) select.appendChild(option.cloneNode(true));
+                        if (exploreSelect) exploreSelect.appendChild(option);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading configs list:', error);
+                    const select = document.getElementById('configsSelect');
+                    const exploreSelect = document.getElementById('exploreBaseConfig');
+                    if (select) select.innerHTML = '<option value="">Ошибка загрузки списка</option>';
+                    if (exploreSelect) exploreSelect.innerHTML = '<option value="">Ошибка загрузки списка</option>';
+                });
+        }
+        
+        let savedDataFile = null;
+        
+        async function loadSavedDataList() {
+            const select = document.getElementById('savedDataSelect');
+            const loadBtn = document.getElementById('loadDataBtn');
+            
+            if (!select) return;
+            
+            try {
+                const response = await fetch('/api/saved-data');
+                const data = await response.json();
+                
+                // Clear existing options except the first one
+                select.innerHTML = '<option value="">Выберите сохраненные данные или загрузите новые...</option>';
+                
+                if (data.success && data.files && data.files.length > 0) {
+                    data.files.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file.path;
+                        const fileSize = (file.size / 1024 / 1024).toFixed(2); // MB
+                        const modifiedDate = new Date(file.modified).toLocaleString('ru-RU');
+                        option.textContent = `${file.name} (${fileSize} MB, ${modifiedDate})`;
+                        select.appendChild(option);
+                    });
+                } else {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'Нет сохраненных данных';
+                    option.disabled = true;
+                    select.appendChild(option);
+                }
+            } catch (error) {
+                console.error('Error loading saved data list:', error);
+                select.innerHTML = '<option value="">Ошибка загрузки списка</option>';
+            }
+        }
+        
+        function onSavedDataSelected() {
+            const select = document.getElementById('savedDataSelect');
+            const runBtn = document.getElementById('runExplorationBtn');
+            const statusDiv = document.getElementById('dataStatus');
+            const statusText = document.getElementById('dataStatusText');
+            
+            if (select && select.value) {
+                savedDataFile = select.value;
+                runBtn.disabled = false;
+                
+                if (statusDiv && statusText) {
+                    statusDiv.style.display = 'block';
+                    statusDiv.style.background = '#d4edda';
+                    statusDiv.style.color = '#155724';
+                    statusText.textContent = `✅ Выбраны сохраненные данные: ${select.options[select.selectedIndex].textContent.split(' (')[0]}`;
+                }
+            } else {
+                if (!savedDataFile) {
+                    runBtn.disabled = true;
+                }
+            }
+        }
+        
+        async function loadAndSaveData() {
+            const baseConfigPath = document.getElementById('exploreBaseConfig').value;
+            const statusDiv = document.getElementById('dataStatus');
+            const loadBtn = document.getElementById('loadDataBtn');
+            const runBtn = document.getElementById('runExplorationBtn');
+            
+            if (!baseConfigPath) {
+                alert('Выберите базовый конфиг');
+                return;
+            }
+            
+            loadBtn.disabled = true;
+            loadBtn.textContent = '⏳ Загрузка данных...';
+            statusDiv.style.display = 'block';
+            statusDiv.style.background = '#fff3cd';
+            statusDiv.style.color = '#856404';
+            const statusText = document.getElementById('dataStatusText');
+            if (statusText) {
+                statusText.textContent = '⏳ Загрузка данных из источника...';
+            } else {
+                statusDiv.innerHTML = '⏳ Загрузка данных из источника...';
+            }
+            
+            try {
+                const response = await fetch('/api/load-data', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({base_config_path: baseConfigPath})
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    savedDataFile = data.data_file;
+                    statusDiv.style.background = '#d4edda';
+                    statusDiv.style.color = '#155724';
+                    if (statusText) {
+                        statusText.textContent = `✅ Данные сохранены: ${data.data_file}`;
+                    } else {
+                        statusDiv.innerHTML = `✅ Данные сохранены: ${data.data_file}`;
+                    }
+                    runBtn.disabled = false;
+                    // Reload saved data list to include the new file
+                    await loadSavedDataList();
+                    // Select the newly saved file
+                    const select = document.getElementById('savedDataSelect');
+                    if (select) {
+                        select.value = data.data_file;
+                        onSavedDataSelected();
+                    }
+                } else {
+                    statusDiv.style.background = '#f8d7da';
+                    statusDiv.style.color = '#721c24';
+                    if (statusText) {
+                        statusText.textContent = `❌ Ошибка: ${data.error}`;
+                    } else {
+                        statusDiv.innerHTML = `❌ Ошибка: ${data.error}`;
+                    }
+                }
+            } catch (error) {
+                statusDiv.style.background = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                if (statusText) {
+                    statusText.textContent = `❌ Ошибка: ${error.message}`;
+                } else {
+                    statusDiv.innerHTML = `❌ Ошибка: ${error.message}`;
+                }
+            } finally {
+                loadBtn.disabled = false;
+                loadBtn.textContent = '💾 Шаг 1: Загрузить и сохранить данные';
+            }
+        }
+        
+        async function runExploration() {
+            const baseConfigPath = document.getElementById('exploreBaseConfig').value;
+            const statusDiv = document.getElementById('exploreStatus');
+            const resultsDiv = document.getElementById('exploreResults');
+            const resultsContent = document.getElementById('exploreResultsContent');
+            
+            if (!baseConfigPath) {
+                alert('Выберите базовый конфиг');
+                return;
+            }
+            
+            if (!savedDataFile) {
+                alert('Сначала загрузите данные (Шаг 1)');
+                return;
+            }
+            
+            // Collect variant settings
+            const variants = {
+                vary_baseline_method: document.getElementById('varyBaselineMethod').checked,
+                vary_window_size: document.getElementById('varyWindowSize').checked,
+                vary_sensitivity: document.getElementById('varySensitivity').checked,
+                vary_adaptive_threshold: document.getElementById('varyAdaptiveThreshold').checked
+            };
+            
+            // Check if at least one variant is selected
+            if (!Object.values(variants).some(v => v)) {
+                alert('Выберите хотя бы один параметр для варьирования');
+                return;
+            }
+            
+            // Show status
+            statusDiv.style.display = 'block';
+            statusDiv.style.background = '#fff3cd';
+            statusDiv.style.color = '#856404';
+            statusDiv.innerHTML = '⏳ Запуск исследования... Это может занять некоторое время.';
+            resultsDiv.style.display = 'none';
+            
+            try {
+                // Use AbortController for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3600000); // 1 hour timeout
+                
+                const response = await fetch('/api/explore', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        base_config_path: baseConfigPath,
+                        variants: variants,
+                        data_file: savedDataFile
+                    }),
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                let data;
+                
+                if (contentType && contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    // If not JSON, try to get text for error message
+                    const text = await response.text();
+                    throw new Error(`Server returned non-JSON response (${response.status}): ${text.substring(0, 200)}`);
+                }
+                
+                if (response.ok && data.success) {
+                    statusDiv.style.background = '#d4edda';
+                    statusDiv.style.color = '#155724';
+                    statusDiv.innerHTML = `<strong>✅ Исследование завершено!</strong><br>Обработано вариантов: ${data.results ? data.results.length : 0}`;
+                    
+                    // Display results
+                    if (data.results) {
+                        displayExplorationResults(data.results);
+                        resultsDiv.style.display = 'block';
+                    }
+                } else {
+                    statusDiv.style.background = '#f8d7da';
+                    statusDiv.style.color = '#721c24';
+                    const errorMsg = data.error || data.message || 'Неизвестная ошибка';
+                    statusDiv.innerHTML = `<strong>❌ Ошибка при выполнении исследования</strong><br><pre style="margin-top: 10px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${errorMsg}</pre>`;
+                }
+            } catch (error) {
+                statusDiv.style.background = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                let errorMsg = error.message || String(error);
+                if (error.name === 'AbortError') {
+                    errorMsg = 'Превышено время ожидания ответа от сервера. Исследование может занять много времени. Проверьте логи сервера.';
+                } else if (error.message && error.message.includes('Failed to fetch')) {
+                    errorMsg = 'Не удалось подключиться к серверу. Возможно, сервер перегружен или произошла ошибка. Проверьте логи сервера.';
+                }
+                statusDiv.innerHTML = `<strong>❌ Ошибка:</strong><br><pre style="margin-top: 10px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${errorMsg}</pre>`;
+                console.error('Exploration error:', error);
+            }
+        }
+        
+        function displayExplorationResults(results) {
+            const resultsContent = document.getElementById('exploreResultsContent');
+            
+            if (!results || results.length === 0) {
+                resultsContent.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">Нет результатов для отображения</p>';
+                return;
+            }
+            
+            // Create comparison table
+            let html = '<div style="overflow-x: auto;">';
+            html += '<table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+            html += '<thead><tr style="background: #667eea; color: white;">';
+            html += '<th style="padding: 12px; text-align: left; border-bottom: 2px solid #5568d3;">Вариант</th>';
+            html += '<th style="padding: 12px; text-align: left;">Метод</th>';
+            html += '<th style="padding: 12px; text-align: left;">Окно</th>';
+            html += '<th style="padding: 12px; text-align: left;">Чувствительность</th>';
+            html += '<th style="padding: 12px; text-align: left;">Адаптивный</th>';
+            html += '<th style="padding: 12px; text-align: center;">Событий</th>';
+            html += '<th style="padding: 12px; text-align: center;">Бейзлайнов</th>';
+            html += '<th style="padding: 12px; text-align: center;">Действия</th>';
+            html += '</tr></thead><tbody>';
+            
+            results.forEach((result, index) => {
+                const variant = result.variant || {};
+                const eventsCount = result.events_count || 0;
+                const baselinesCount = result.baselines_count || 0;
+                const reportPath = result.report_path || '';
+                
+                html += '<tr style="border-bottom: 1px solid #e0e0e0;">';
+                html += `<td style="padding: 12px; font-weight: 500;">Вариант ${index + 1}</td>`;
+                html += `<td style="padding: 12px;">${variant.baseline_method || '-'}</td>`;
+                html += `<td style="padding: 12px;">${variant.window_size || '-'}</td>`;
+                html += `<td style="padding: 12px;">${variant.sensitivity || '-'}</td>`;
+                html += `<td style="padding: 12px;">${variant.adaptive_threshold ? 'Да' : 'Нет'}</td>`;
+                html += `<td style="padding: 12px; text-align: center;"><strong>${eventsCount}</strong></td>`;
+                html += `<td style="padding: 12px; text-align: center;">${baselinesCount}</td>`;
+                html += '<td style="padding: 12px; text-align: center; vertical-align: top;">';
+                if (reportPath) {
+                    html += `<a href="${reportPath}" target="_blank" style="padding: 8px 16px; background: #2196F3; color: white; text-decoration: none; border-radius: 4px; font-size: 13px; font-weight: 500; display: inline-block;">📄 Открыть отчет</a>`;
+                } else {
+                    html += '<span style="color: #999; font-size: 12px;">Нет отчета</span>';
+                }
+                // Show recommendations if no events
+                if (eventsCount === 0 && result.recommendations && result.recommendations.length > 0) {
+                    html += `<div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 4px; font-size: 11px; text-align: left; max-width: 300px;">`;
+                    result.recommendations.forEach(rec => {
+                        html += `<div style="margin-bottom: 3px;">💡 ${rec}</div>`;
+                    });
+                    html += `</div>`;
+                }
+                // NOTE: Individual graph buttons are NOT generated here anymore
+                // Graphs are shown only when a context is selected in the section below
+                html += '</td>';
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table></div>';
+            
+            // Add summary statistics
+            html += '<div style="margin-top: 30px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">';
+            
+            const totalEvents = results.reduce((sum, r) => sum + (r.events_count || 0), 0);
+            const totalBaselines = results.reduce((sum, r) => sum + (r.baselines_count || 0), 0);
+            const avgEvents = (totalEvents / results.length).toFixed(1);
+            const maxEvents = Math.max(...results.map(r => r.events_count || 0));
+            const minEvents = Math.min(...results.map(r => r.events_count || 0));
+            
+            html += '<div style="padding: 15px; background: #e3f2fd; border-radius: 8px; border-left: 4px solid #2196F3;">';
+            html += '<div style="font-size: 24px; font-weight: bold; color: #1976d2;">' + results.length + '</div>';
+            html += '<div style="color: #666; font-size: 14px;">Всего вариантов</div>';
+            html += '</div>';
+            
+            html += '<div style="padding: 15px; background: #fff3e0; border-radius: 8px; border-left: 4px solid #ff9800;">';
+            html += '<div style="font-size: 24px; font-weight: bold; color: #f57c00;">' + totalEvents + '</div>';
+            html += '<div style="color: #666; font-size: 14px;">Всего событий</div>';
+            html += '</div>';
+            
+            html += '<div style="padding: 15px; background: #f3e5f5; border-radius: 8px; border-left: 4px solid #9c27b0;">';
+            html += '<div style="font-size: 24px; font-weight: bold; color: #7b1fa2;">' + avgEvents + '</div>';
+            html += '<div style="color: #666; font-size: 14px;">Среднее событий/вариант</div>';
+            html += '</div>';
+            
+            html += '<div style="padding: 15px; background: #e8f5e9; border-radius: 8px; border-left: 4px solid #4caf50;">';
+            html += '<div style="font-size: 24px; font-weight: bold; color: #388e3c;">' + minEvents + ' - ' + maxEvents + '</div>';
+            html += '<div style="color: #666; font-size: 14px;">Диапазон событий</div>';
+            html += '</div>';
+            
+            html += '</div>';
+            
+            // Add summary reports section (instead of full gallery)
+            html += generateSummaryReportsSection(results);
+            
+            resultsContent.innerHTML = html;
+        }
+        
+        function generateSummaryReportsSection(results) {
+            // Extract contexts from results (from first variant that has contexts_info)
+            let allContexts = [];
+            for (const result of results) {
+                if (result.contexts_info && result.contexts_info.length > 0) {
+                    allContexts = result.contexts_info;
+                    break;
+                }
+            }
+            
+            let html = '<div style="margin-top: 40px; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+            html += '<h3 style="margin: 0 0 20px 0; color: #333; font-size: 18px;">📄 Summary отчеты</h3>';
+            html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; margin-bottom: 30px;">';
+            
+            results.forEach((result, index) => {
+                const variant = result.variant || {};
+                const reportPath = result.report_path || '';
+                const eventsCount = result.events_count || 0;
+                const baselinesCount = result.baselines_count || 0;
+                
+                html += '<div style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; background: #f9f9f9; transition: transform 0.2s, box-shadow 0.2s;" ';
+                html += 'onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 8px rgba(0,0,0,0.1)\';" ';
+                html += 'onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'none\';"';
+                html += '>';
+                
+                html += `<div style="font-weight: 600; color: #333; margin-bottom: 8px; font-size: 16px;">Вариант ${index + 1}</div>`;
+                html += `<div style="font-size: 12px; color: #666; margin-bottom: 10px;">`;
+                html += `${variant.baseline_method || 'N/A'} | окно: ${variant.window_size || 'N/A'}`;
+                html += `</div>`;
+                
+                html += '<div style="display: flex; gap: 10px; margin-bottom: 10px; font-size: 12px;">';
+                html += `<span style="padding: 4px 8px; background: #ffebee; color: #c62828; border-radius: 4px;">${eventsCount} событий</span>`;
+                html += `<span style="padding: 4px 8px; background: #e8f5e9; color: #2e7d32; border-radius: 4px;">${baselinesCount} бейзлайнов</span>`;
+                html += `</div>`;
+                
+                if (reportPath) {
+                    html += `<a href="${reportPath}" target="_blank" style="display: block; padding: 8px 12px; background: #2196F3; color: white; text-decoration: none; border-radius: 4px; font-size: 13px; text-align: center; font-weight: 500;">📄 Открыть отчет</a>`;
+                } else {
+                    html += '<div style="padding: 8px 12px; background: #e0e0e0; color: #999; border-radius: 4px; font-size: 13px; text-align: center;">Нет отчета</div>';
+                }
+                
+                html += '</div>';
+            });
+            
+            html += '</div>';
+            
+            // Add context selector and graphs section
+            if (allContexts.length > 0) {
+                html += '<div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid #e0e0e0;">';
+                html += '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">';
+                html += '<h3 style="margin: 0; color: #333; font-size: 18px;">📊 Графики по контекстам</h3>';
+                html += '<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">';
+                html += '<label style="color: #666; font-size: 14px;">Выберите контекст:</label>';
+                html += '<select id="contextFilter" onchange="filterVisualizationsByContext(this.value)" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: white; cursor: pointer; min-width: 400px;">';
+                html += '<option value="">-- Выберите контекст для просмотра графиков --</option>';
+                allContexts.forEach((ctx) => {
+                    const eventsText = ctx.events_count > 0 ? `, ${ctx.events_count} событий` : '';
+                    html += `<option value="${ctx.context_hash}">${ctx.context_display} (${ctx.viz_count} точек${eventsText})</option>`;
+                });
+                html += '</select>';
+                html += '</div>';
+                html += '</div>';
+                
+                // Container for graphs (will be populated when context is selected)
+                html += '<div id="contextGraphsContainer" style="display: none; margin-top: 20px;">';
+                html += '</div>';
+                
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            
+            // Store results and contexts globally for later use
+            window.explorationResults = results;
+            window.explorationContexts = allContexts;
+            
+            return html;
+        }
+        
+        function generateVisualizationGallery(results) {
+            // Extract contexts from results (from first variant that has contexts_info)
+            let allContexts = [];
+            for (const result of results) {
+                if (result.contexts_info && result.contexts_info.length > 0) {
+                    allContexts = result.contexts_info;
+                    break;
+                }
+            }
+            
+            // Build mapping: context_hash -> {metric -> {variant_index: [viz_files]}}
+            const contextsMap = new Map();
+            
+            results.forEach((result, variantIndex) => {
+                const vizFiles = result.visualization_files || [];
+                vizFiles.forEach(vizItem => {
+                    // Handle both new format (object with path, metric_name, events_count) and old format (string path)
+                    const vizPath = typeof vizItem === 'string' ? vizItem : vizItem.path;
+                    const metricName = typeof vizItem === 'object' && vizItem.metric_name ? vizItem.metric_name : 'unknown';
+                    const metricEventsCount = typeof vizItem === 'object' && vizItem.events_count !== undefined ? vizItem.events_count : 0;
+                    const metricPositiveEvents = typeof vizItem === 'object' && vizItem.positive_events_count !== undefined ? vizItem.positive_events_count : 0;
+                    const metricNegativeEvents = typeof vizItem === 'object' && vizItem.negative_events_count !== undefined ? vizItem.negative_events_count : 0;
+                    
+                    // Extract context hash from filename
+                    const filename = vizPath.split('/').pop();
+                    const parts = filename.replace('.html', '').split('_');
+                    
+                    let contextHashShort = '';
+                    const eventIndex = parts.indexOf('event');
+                    if (eventIndex >= 0 && eventIndex + 1 < parts.length) {
+                        contextHashShort = parts[eventIndex + 1]; // 8-char hash
+                    }
+                    
+                    // Find full context_hash from contexts_info
+                    let fullContextHash = contextHashShort;
+                    let contextDisplay = `Context ${contextHashShort}`;
+                    for (const ctx of allContexts) {
+                        if (ctx.context_hash_short === contextHashShort) {
+                            fullContextHash = ctx.context_hash;
+                            contextDisplay = ctx.context_display || contextDisplay;
+                            break;
+                        }
+                    }
+                    
+                    if (!contextsMap.has(fullContextHash)) {
+                        contextsMap.set(fullContextHash, {
+                            context_hash: fullContextHash,
+                            context_hash_short: contextHashShort,
+                            context_display: contextDisplay,
+                            metrics: new Map()
+                        });
+                    }
+                    
+                    const contextData = contextsMap.get(fullContextHash);
+                    // Group by metric name - each metric has its own visualization file
+                    const metricKey = metricName;
+                    if (!contextData.metrics.has(metricKey)) {
+                        contextData.metrics.set(metricKey, {});
+                    }
+                    // Only store one file per variant, context, and metric
+                    if (!contextData.metrics.get(metricKey)[variantIndex]) {
+                        contextData.metrics.get(metricKey)[variantIndex] = [{
+                            path: vizPath,
+                            variantIndex: variantIndex,
+                            variant: result.variant || {},
+                            metricName: metricName,
+                            eventsCount: metricEventsCount,
+                            positiveEventsCount: metricPositiveEvents,
+                            negativeEventsCount: metricNegativeEvents
+                        }];
+                    }
+                });
+            });
+            
+            if (contextsMap.size === 0) {
+                return '<div style="margin-top: 30px; padding: 20px; background: #f5f5f5; border-radius: 8px; text-align: center; color: #666;">📊 Визуализации не найдены</div>';
+            }
+            
+            // Convert to array and sort by number of visualizations (data points) descending
+            const contextsArray = Array.from(contextsMap.values()).map(ctx => {
+                let totalVizCount = 0;
+                ctx.metrics.forEach((variants) => {
+                    Object.values(variants).forEach(vizList => {
+                        totalVizCount += vizList.length;
+                    });
+                });
+                return {
+                    ...ctx,
+                    viz_count: totalVizCount
+                };
+            });
+            contextsArray.sort((a, b) => b.viz_count - a.viz_count);
+            
+            let html = '<div style="margin-top: 40px; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+            html += '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">';
+            html += '<h3 style="margin: 0; color: #333; font-size: 18px;">📊 Визуализации по контекстам</h3>';
+            html += '<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">';
+            html += '<label style="color: #666; font-size: 14px;">Контекст:</label>';
+            html += '<select id="contextFilter" onchange="filterVisualizationsByContext(this.value)" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: white; cursor: pointer; min-width: 300px;">';
+            html += '<option value="all">Все контексты</option>';
+            contextsArray.forEach((ctx, idx) => {
+                const eventsText = ctx.events_count > 0 ? `, ${ctx.events_count} событий` : '';
+                html += `<option value="${ctx.context_hash}">${ctx.context_display} (${ctx.viz_count} точек${eventsText})</option>`;
+            });
+            html += '</select>';
+            html += '</div>';
+            html += '</div>';
+            
+            // Generate gallery for each context
+            contextsArray.forEach((ctx, ctxIndex) => {
+                html += `<div class="context-gallery" data-context="${ctx.context_hash}" style="display: ${ctxIndex === 0 ? 'block' : 'none'}; margin-bottom: 30px;">`;
+                html += `<h4 style="margin: 0 0 15px 0; color: #667eea; font-size: 16px;">${ctx.context_display} <span style="color: #999; font-size: 14px; font-weight: normal;">(${ctx.viz_count} точек данных)</span></h4>`;
+                
+                // Now each context has one visualization file (not per metric)
+                // Show visualizations for each variant
+                
+                // Group by metrics first, then show variants for each metric
+                ctx.metrics.forEach((metricVizMap, metricName) => {
+                    // Get all variants for this metric
+                    const allVariantsForMetric = [];
+                    results.forEach((result, variantIndex) => {
+                        const variantViz = metricVizMap[variantIndex] || [];
+                        if (variantViz.length > 0) {
+                            allVariantsForMetric.push({ variantIndex, viz: variantViz[0], result });
+                        }
+                    });
+                    
+                    if (allVariantsForMetric.length > 0) {
+                        // Get events count for this metric (from first variant, they should be the same for all variants)
+                        const firstViz = allVariantsForMetric[0].viz;
+                        const metricEventsCount = firstViz.eventsCount || 0;
+                        const metricPositiveEvents = firstViz.positiveEventsCount || 0;
+                        const metricNegativeEvents = firstViz.negativeEventsCount || 0;
+                        const displayMetricName = firstViz.metricName && firstViz.metricName !== 'all_metrics' ? firstViz.metricName : metricName;
+                        
+                        // Metric header (without event counts - they are shown per variant)
+                        html += `<div style="margin-bottom: 30px;">`;
+                        html += `<h4 style="margin: 0 0 15px 0; color: #667eea; font-size: 18px; font-weight: 600;">${displayMetricName}</h4>`;
+                        
+                        // Grid for variants of this metric
+                        html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">';
+                        
+                        // Show all variants for this metric
+                        allVariantsForMetric.forEach(({ variantIndex, viz, result }) => {
+                            const variant = viz.variant || {};
+                            const variantLabel = `Вариант ${variantIndex + 1}`;
+                            const variantInfo = `${variant.baseline_method || 'N/A'} | окно: ${variant.window_size || 'N/A'} | чувств: ${variant.sensitivity || 'N/A'}`;
+                            // Use metric-specific events count
+                            const positiveEvents = viz.positiveEventsCount || 0;
+                            const negativeEvents = viz.negativeEventsCount || 0;
+                            const eventsCount = viz.eventsCount || 0;
+                                
+                                html += '<div class="viz-thumbnail" style="border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s;" ';
+                                html += 'onmouseover="this.style.transform=\'scale(1.02)\'; this.style.boxShadow=\'0 4px 8px rgba(0,0,0,0.15)\';" ';
+                                html += 'onmouseout="this.style.transform=\'scale(1)\'; this.style.boxShadow=\'0 2px 4px rgba(0,0,0,0.1)\';" ';
+                                html += 'onclick="openVisualization(\'' + viz.path + '\', \'' + variantLabel + '\')" ';
+                                html += 'style="cursor: pointer;" data-viz-path="' + viz.path + '">';
+                                
+                                // Thumbnail preview - use lazy loading
+                                html += `<div style="position: relative; width: 100%; height: 400px; overflow: hidden; background: #f5f5f5; display: flex; align-items: center; justify-content: center;">`;
+                                html += `<div class="viz-placeholder" style="color: #999; font-size: 14px;">Загрузка графика...</div>`;
+                                html += `<iframe class="viz-iframe" data-src="${viz.path}" style="display: none; width: 100%; height: 100%; border: none; pointer-events: none;"></iframe>`;
+                                html += `<div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.01); cursor: pointer;"></div>`;
+                                html += `</div>`;
+                                
+                                // Variant info
+                                html += '<div style="padding: 12px; background: #f9f9f9;">';
+                                html += `<div style="font-weight: 600; color: #333; margin-bottom: 4px;">${variantLabel}</div>`;
+                                html += `<div style="font-size: 12px; color: #666;">${variantInfo}</div>`;
+                                
+                                // Events info with positive/negative split
+                                if (eventsCount > 0) {
+                                    const positiveText = positiveEvents > 0 ? `${positiveEvents} ${positiveEvents === 1 ? 'положительное' : positiveEvents < 5 ? 'положительных' : 'положительных'}` : '';
+                                    const negativeText = negativeEvents > 0 ? `${negativeEvents} ${negativeEvents === 1 ? 'отрицательное' : negativeEvents < 5 ? 'отрицательных' : 'отрицательных'}` : '';
+                                    let eventsText = '';
+                                    if (positiveText && negativeText) {
+                                        eventsText = `🟢 ${positiveText}, 🔴 ${negativeText}`;
+                                    } else if (positiveText) {
+                                        eventsText = `🟢 ${positiveText}`;
+                                    } else if (negativeText) {
+                                        eventsText = `🔴 ${negativeText}`;
+                                    } else {
+                                        eventsText = `⚪ ${eventsCount} ${eventsCount === 1 ? 'событие' : eventsCount < 5 ? 'события' : 'событий'}`;
+                                    }
+                                    html += `<div style="margin-top: 6px; font-size: 12px; font-weight: 500; color: #333;">${eventsText}</div>`;
+                                } else {
+                                    html += `<div style="margin-top: 6px; font-size: 12px; font-weight: 500; color: #666;">⚪ Нет событий</div>`;
+                                }
+                                html += `<div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">`;
+                                html += `<a href="${viz.path}" target="_blank" onclick="event.stopPropagation();" style="padding: 4px 8px; background: #2196F3; color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">🔗 Открыть</a>`;
+                                html += `<span style="padding: 4px 8px; background: #e0e0e0; color: #666; border-radius: 4px; font-size: 11px; cursor: pointer;" onclick="event.stopPropagation(); expandThumbnail(this)">🔍 Увеличить</span>`;
+                                // Add "Save Data" button
+                                const dataFilename = viz.path.split('/').pop().replace('.html', '_data.json');
+                                html += `<a href="/api/viz-data/${dataFilename}" onclick="event.stopPropagation();" download="${dataFilename}" style="padding: 4px 8px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">💾 Сохранить данные</a>`;
+                                html += `</div>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div>'; // Close grid for this metric
+                        html += '</div>'; // Close metric section
+                    }
+                });
+                
+                html += '</div>';
+            });
+            
+            html += '</div>';
+            
+            // Initialize lazy loading for iframes after HTML is inserted
+            setTimeout(() => {
+                initializeLazyLoading();
+            }, 100);
+            
+            return html;
+        }
+        
+        function initializeLazyLoading() {
+            // Use Intersection Observer for lazy loading iframes
+            if ('IntersectionObserver' in window) {
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const iframe = entry.target;
+                            const container = iframe.parentElement;
+                            const placeholder = container ? container.querySelector('.viz-placeholder') : null;
+                            
+                            if (iframe.dataset.src && !iframe.src) {
+                                iframe.src = iframe.dataset.src;
+                                iframe.onload = function() {
+                                    iframe.style.opacity = '1';
+                                    if (placeholder) {
+                                        placeholder.style.display = 'none';
+                                    }
+                                };
+                                observer.unobserve(iframe);
+                            }
+                        }
+                    });
+                }, {
+                    rootMargin: '100px' // Start loading 100px before visible
+                });
+                
+                document.querySelectorAll('.viz-iframe').forEach(iframe => {
+                    observer.observe(iframe);
+                });
+            } else {
+                // Fallback: load all iframes immediately if IntersectionObserver is not supported
+                document.querySelectorAll('.viz-iframe').forEach(iframe => {
+                    if (iframe.dataset.src) {
+                        iframe.src = iframe.dataset.src;
+                        const container = iframe.parentElement;
+                        const placeholder = container ? container.querySelector('.viz-placeholder') : null;
+                        iframe.onload = function() {
+                            iframe.style.opacity = '1';
+                            if (placeholder) {
+                                placeholder.style.display = 'none';
+                            }
+                        };
+                    }
+                });
+            }
+        }
+        
+        function showAllGraphsForContext(contextHash) {
+            // This would require re-rendering with all graphs
+            // For now, just show a message
+            alert('Функция "Показать все" будет реализована в следующей версии. Пока что используйте фильтр по контекстам для просмотра конкретных графиков.');
+        }
+        
+        function filterVisualizationsByContext(contextHash) {
+            const container = document.getElementById('contextGraphsContainer');
+            if (!container) return;
+            
+            if (!contextHash || contextHash === '') {
+                container.style.display = 'none';
+                container.innerHTML = '';
+                return;
+            }
+            
+            // Find selected context
+            const selectedContext = window.explorationContexts.find(ctx => ctx.context_hash === contextHash);
+            if (!selectedContext) return;
+            
+            // Build mapping: context_hash -> {metric -> {variant_index: [viz_files]}}
+            const contextsMap = new Map();
+            
+            window.explorationResults.forEach((result, variantIndex) => {
+                const vizFiles = result.visualization_files || [];
+                vizFiles.forEach(vizItem => {
+                    // Handle both new format (object with path, metric_name, events_count) and old format (string path)
+                    const vizPath = typeof vizItem === 'string' ? vizItem : vizItem.path;
+                    const metricName = typeof vizItem === 'object' && vizItem.metric_name ? vizItem.metric_name : 'unknown';
+                    const metricEventsCount = typeof vizItem === 'object' && vizItem.events_count !== undefined ? vizItem.events_count : 0;
+                    const metricPositiveEvents = typeof vizItem === 'object' && vizItem.positive_events_count !== undefined ? vizItem.positive_events_count : 0;
+                    const metricNegativeEvents = typeof vizItem === 'object' && vizItem.negative_events_count !== undefined ? vizItem.negative_events_count : 0;
+                    
+                    // Extract context hash from filename
+                    const filename = vizPath.split('/').pop();
+                    const parts = filename.replace('.html', '').split('_');
+                    
+                    let contextHashShort = '';
+                    const eventIndex = parts.indexOf('event');
+                    if (eventIndex >= 0 && eventIndex + 1 < parts.length) {
+                        contextHashShort = parts[eventIndex + 1]; // 8-char hash
+                    }
+                    
+                    // Check if this file belongs to selected context
+                    if (contextHashShort === selectedContext.context_hash_short) {
+                        if (!contextsMap.has(selectedContext.context_hash)) {
+                            contextsMap.set(selectedContext.context_hash, {
+                                context_hash: selectedContext.context_hash,
+                                context_display: selectedContext.context_display,
+                                metrics: new Map()
+                            });
+                        }
+                        
+                        const contextData = contextsMap.get(selectedContext.context_hash);
+                        // Group by metric name - each metric has its own visualization file
+                        const metricKey = metricName;
+                        if (!contextData.metrics.has(metricKey)) {
+                            contextData.metrics.set(metricKey, {});
+                        }
+                        // Only store one file per variant, context, and metric
+                        if (!contextData.metrics.get(metricKey)[variantIndex]) {
+                            contextData.metrics.get(metricKey)[variantIndex] = [{
+                                path: vizPath,
+                                variantIndex: variantIndex,
+                                variant: result.variant || {},
+                                metricName: metricName,
+                                eventsCount: metricEventsCount,
+                                positiveEventsCount: metricPositiveEvents,
+                                negativeEventsCount: metricNegativeEvents
+                            }];
+                        }
+                    }
+                });
+            });
+            
+            // Generate HTML for selected context graphs
+            let graphsHtml = '';
+            const contextData = contextsMap.get(contextHash);
+            if (contextData) {
+                graphsHtml += `<h4 style="margin: 0 0 15px 0; color: #667eea; font-size: 16px;">${contextData.context_display}</h4>`;
+                
+                // Group by metrics first, then show variants for each metric
+                contextData.metrics.forEach((metricVizMap, metricName) => {
+                    // Get all variants for this metric
+                    const allVariantsForMetric = [];
+                    window.explorationResults.forEach((result, variantIndex) => {
+                        const variantViz = metricVizMap[variantIndex] || [];
+                        if (variantViz.length > 0) {
+                            allVariantsForMetric.push({ variantIndex, viz: variantViz[0], result });
+                        }
+                    });
+                    
+                    if (allVariantsForMetric.length > 0) {
+                        // Get events count for this metric (from first variant, they should be the same for all variants)
+                        const firstViz = allVariantsForMetric[0].viz;
+                        const metricEventsCount = firstViz.eventsCount || 0;
+                        const metricPositiveEvents = firstViz.positiveEventsCount || 0;
+                        const metricNegativeEvents = firstViz.negativeEventsCount || 0;
+                        const displayMetricName = firstViz.metricName && firstViz.metricName !== 'all_metrics' ? firstViz.metricName : metricName;
+                        
+                        // Metric header (without event counts - they are shown per variant)
+                        graphsHtml += `<div style="margin-bottom: 30px;">`;
+                        graphsHtml += `<h4 style="margin: 0 0 15px 0; color: #667eea; font-size: 18px; font-weight: 600;">${displayMetricName}</h4>`;
+                        
+                        // Grid for variants of this metric
+                        graphsHtml += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">';
+                        
+                        // Show all variants for this metric
+                        allVariantsForMetric.forEach(({ variantIndex, viz, result }) => {
+                            const variant = viz.variant || {};
+                            const variantLabel = `Вариант ${variantIndex + 1}`;
+                            const variantInfo = `${variant.baseline_method || 'N/A'} | окно: ${variant.window_size || 'N/A'} | чувств: ${variant.sensitivity || 'N/A'}`;
+                            // Use metric-specific events count
+                            const positiveEvents = viz.positiveEventsCount || 0;
+                            const negativeEvents = viz.negativeEventsCount || 0;
+                            const eventsCount = viz.eventsCount || 0;
+                            
+                            graphsHtml += '<div class="viz-thumbnail" style="border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s;" ';
+                            graphsHtml += 'onmouseover="this.style.transform=\'scale(1.02)\'; this.style.boxShadow=\'0 4px 8px rgba(0,0,0,0.15)\';" ';
+                            graphsHtml += 'onmouseout="this.style.transform=\'scale(1)\'; this.style.boxShadow=\'0 2px 4px rgba(0,0,0,0.1)\';" ';
+                            graphsHtml += 'onclick="openVisualization(\'' + viz.path + '\', \'' + variantLabel + '\')" ';
+                            graphsHtml += 'style="cursor: pointer;" data-viz-path="' + viz.path + '">';
+                            
+                            graphsHtml += `<div style="position: relative; width: 100%; height: 400px; overflow: hidden; background: #f5f5f5;">`;
+                            graphsHtml += `<div class="viz-placeholder" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; color: #999; font-size: 14px; background: #f5f5f5; z-index: 1;">Загрузка графика...</div>`;
+                            graphsHtml += `<iframe class="viz-iframe" data-src="${viz.path}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; pointer-events: none; opacity: 0; z-index: 0;"></iframe>`;
+                            graphsHtml += `<div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.01); cursor: pointer; z-index: 2;"></div>`;
+                            graphsHtml += `</div>`;
+                            
+                            graphsHtml += '<div style="padding: 12px; background: #f9f9f9;">';
+                            graphsHtml += `<div style="font-weight: 600; color: #333; margin-bottom: 4px;">${variantLabel}</div>`;
+                            graphsHtml += `<div style="font-size: 12px; color: #666;">${variantInfo}</div>`;
+                            
+                            // Events info with positive/negative split
+                            if (eventsCount > 0) {
+                                const positiveText = positiveEvents > 0 ? `${positiveEvents} ${positiveEvents === 1 ? 'положительное' : positiveEvents < 5 ? 'положительных' : 'положительных'}` : '';
+                                const negativeText = negativeEvents > 0 ? `${negativeEvents} ${negativeEvents === 1 ? 'отрицательное' : negativeEvents < 5 ? 'отрицательных' : 'отрицательных'}` : '';
+                                let eventsText = '';
+                                if (positiveText && negativeText) {
+                                    eventsText = `🟢 ${positiveText}, 🔴 ${negativeText}`;
+                                } else if (positiveText) {
+                                    eventsText = `🟢 ${positiveText}`;
+                                } else if (negativeText) {
+                                    eventsText = `🔴 ${negativeText}`;
+                                } else {
+                                    eventsText = `⚪ ${eventsCount} ${eventsCount === 1 ? 'событие' : eventsCount < 5 ? 'события' : 'событий'}`;
+                                }
+                                graphsHtml += `<div style="margin-top: 6px; font-size: 12px; font-weight: 500; color: #333;">${eventsText}</div>`;
+                            } else {
+                                graphsHtml += `<div style="margin-top: 6px; font-size: 12px; font-weight: 500; color: #666;">⚪ Нет событий</div>`;
+                            }
+                            graphsHtml += `<div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">`;
+                            graphsHtml += `<a href="${viz.path}" target="_blank" onclick="event.stopPropagation();" style="padding: 4px 8px; background: #2196F3; color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">🔗 Открыть</a>`;
+                            graphsHtml += `<span style="padding: 4px 8px; background: #e0e0e0; color: #666; border-radius: 4px; font-size: 11px; cursor: pointer;" onclick="event.stopPropagation(); expandThumbnail(this)">🔍 Увеличить</span>`;
+                            // Add "Save Data" button
+                            const dataFilename = viz.path.split('/').pop().replace('.html', '_data.json');
+                            graphsHtml += `<a href="/api/viz-data/${dataFilename}" onclick="event.stopPropagation();" download="${dataFilename}" style="padding: 4px 8px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">💾 Сохранить данные</a>`;
+                            graphsHtml += `</div>`;
+                            graphsHtml += `</div>`;
+                            graphsHtml += `</div>`;
+                        });
+                        
+                        graphsHtml += '</div>'; // Close grid for this metric
+                        graphsHtml += '</div>'; // Close metric section
+                    }
+                });
+            } else {
+                graphsHtml = '<div style="padding: 20px; text-align: center; color: #666;">Графики для выбранного контекста не найдены</div>';
+            }
+            
+            container.innerHTML = graphsHtml;
+            container.style.display = 'block';
+            
+            // Initialize lazy loading for new iframes
+            setTimeout(() => {
+                initializeLazyLoading();
+            }, 100);
+        }
+        
+        function filterVisualizations(metric) {
+            const galleries = document.querySelectorAll('.metric-gallery');
+            galleries.forEach(gallery => {
+                if (metric === 'all') {
+                    gallery.style.display = 'block';
+                } else if (gallery.dataset.metric === metric) {
+                    gallery.style.display = 'block';
+                } else {
+                    gallery.style.display = 'none';
+                }
+            });
+        }
+        
+        function openVisualization(path, variantLabel) {
+            // Open in new tab
+            window.open(path, '_blank');
+        }
+        
+        function expandThumbnail(element) {
+            const card = element.closest('div[onclick]');
+            if (!card) return;
+            
+            const iframe = card.querySelector('iframe');
+            if (!iframe) return;
+            
+            // Create modal
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;';
+            modal.onclick = function(e) {
+                if (e.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            };
+            
+            const content = document.createElement('div');
+            content.style.cssText = 'background: white; border-radius: 8px; padding: 20px; max-width: 95%; max-height: 95%; overflow: auto; position: relative;';
+            content.onclick = function(e) { e.stopPropagation(); };
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText = 'position: absolute; top: 10px; right: 10px; background: #f44336; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: 18px; line-height: 1;';
+            closeBtn.onclick = function() { document.body.removeChild(modal); };
+            
+            const expandedIframe = document.createElement('iframe');
+            expandedIframe.src = iframe.src;
+            expandedIframe.style.cssText = 'width: 90vw; height: 80vh; border: none; border-radius: 4px;';
+            
+            content.appendChild(closeBtn);
+            content.appendChild(expandedIframe);
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+        }
+        
+        function loadConfigFromSelect() {
+            const select = document.getElementById('configsSelect');
+            const configPath = select.value;
+            
+            // Don't load if no config selected (empty value)
+            if (!configPath) {
+                document.getElementById('fileName').textContent = '';
+                return;
+            }
+            
+            // Load config file from server
+            fetch(`/api/config?path=${encodeURIComponent(configPath)}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Ошибка загрузки конфига');
+                    }
+                    return response.text();
+                })
+                .then(yamlText => {
+                    try {
+                        // Parse YAML
+                        const config = parseYAML(yamlText);
+                        console.log('Parsed config:', JSON.stringify(config, null, 2));
+                        
+                        // Fill form with loaded values
+                        fillFormFromConfig(config);
+                        
+                        // Update file name display
+                        const fileName = configPath.split('/').pop();
+                        document.getElementById('fileName').textContent = '📄 ' + fileName;
+                        
+                        // Generate preview
+                        setTimeout(function() {
+                            generateConfig();
+                        }, 100);
+                    } catch (error) {
+                        alert('Ошибка парсинга конфига: ' + error.message);
+                        console.error('Parse error:', error);
+                        document.getElementById('fileName').textContent = '';
+                    }
+                })
+                .catch(error => {
+                    alert('Ошибка загрузки конфига: ' + error.message);
+                    console.error('Load error:', error);
+                    document.getElementById('fileName').textContent = '';
+                });
         }
         
         function loadYamlFile(event) {

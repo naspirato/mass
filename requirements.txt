@@ -4,6 +4,7 @@ numpy>=1.20.0
 pyyaml>=6.0
 scipy>=1.9.0
 statsmodels>=0.13.0
+pyarrow>=10.0.0  # For parquet file format support
 
 # Date/time utilities
 python-dateutil>=2.8.0
@@ -22,7 +23,7 @@ python-dotenv>=1.0.0
 
 # YDB SDK (should be installed separately, but listed for reference)
 # ydb>=2.0.0
-# ydb[yc]>=2.0.0
+ydb[yc]>=2.0.0
 
 # Note: Python version requirements:
 # - prophet requires numba which supports Python >=3.10,<3.14

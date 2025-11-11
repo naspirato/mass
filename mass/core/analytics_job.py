@@ -64,7 +64,8 @@ def create_adapter(config: Dict[str, Any]) -> DataAdapter:
 class AnalyticsJob:
     """Main orchestrator for analytics pipeline"""
     
-    def __init__(self, config_path: str, dry_run: bool = False, event_deepness: Optional[str] = None):
+    def __init__(self, config_path: str, dry_run: bool = False, event_deepness: Optional[str] = None, 
+                 data_file: Optional[str] = None):
         """
         Initialize analytics job
         
@@ -73,10 +74,12 @@ class AnalyticsJob:
             dry_run: If True, don't write to data source
             event_deepness: Optional time window for event analysis (e.g., "7d", "30d", "1h", "2w")
                           Only events within this window will be analyzed
+            data_file: Optional path to saved data file (if provided, load from file instead of data source)
         """
         self.config_path = config_path
         self.dry_run = dry_run
         self.event_deepness = event_deepness
+        self.data_file = data_file
         
         # Load configuration
         try:
@@ -119,10 +122,13 @@ class AnalyticsJob:
         
         try:
             # Step 1: Load data
-            print("Step 1: Loading measurements from data source...")
-            
-            # Always load ALL data for baseline calculation (stable baseline on historical data)
-            df_all = self.data_access.load_measurements(start_ts=None, end_ts=None)
+            if self.data_file:
+                print(f"Step 1: Loading measurements from file: {self.data_file}...")
+                df_all = self.data_access.load_data_from_file(self.data_file)
+            else:
+                print("Step 1: Loading measurements from data source...")
+                # Always load ALL data for baseline calculation (stable baseline on historical data)
+                df_all = self.data_access.load_measurements(start_ts=None, end_ts=None)
             
             # Calculate time window for event analysis if event_deepness is specified
             event_start_ts = None
@@ -376,9 +382,10 @@ class AnalyticsJob:
                 
                 all_events.extend(events)
                 
-                # Store visualization data if there are events
+                # Store visualization data - always store for exploration mode (dry_run)
+                # For exploration, we want to see all groups even without events
                 # Use series_all for visualization to show full context, but events are only in the window
-                if events:
+                if events or self.dry_run:
                     visualization_data.append({
                         'metric_name': metric_name,
                         'context_hash': context_hash,
@@ -386,6 +393,13 @@ class AnalyticsJob:
                         'series': series_all,  # Show full series for context
                         'baseline_result': baseline_result,
                         'events': events,  # Events are only in the filtered window
+                        'variant_config': {
+                            'baseline_method': baseline_result.get('baseline_method'),
+                            'window_size': baseline_result.get('window_size'),
+                            'sensitivity': baseline_result.get('sensitivity'),
+                            'adaptive_threshold': baseline_result.get('adaptive_threshold', False),
+                            'analytics_config': self.analytics_config.copy() if hasattr(self, 'analytics_config') else {}
+                        }
                     })
                 
                 processed += 1
@@ -423,8 +437,20 @@ class AnalyticsJob:
                 self._save_dry_run_results(all_events, all_thresholds, visualization_data)
             
             # Step 5: Generate visualizations and reports
-            if all_events or visualization_data:
+            # Always generate visualizations in dry_run mode (for exploration)
+            # Generate visualizations if we have data to visualize (even without events/baselines)
+            if visualization_data:
                 print("\nStep 5: Generating visualizations and reports...")
+                print(f"  Found {len(visualization_data)} metric×context combinations")
+                
+                # Group visualization data by context_hash
+                from collections import defaultdict
+                visualization_by_context = defaultdict(list)
+                for viz_data in visualization_data:
+                    context_hash = viz_data.get('context_hash', '')
+                    visualization_by_context[context_hash].append(viz_data)
+                
+                print(f"  Grouped into {len(visualization_by_context)} contexts to visualize")
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 job_name = self.config.get('job', {}).get('name', 'analytics_job')
                 output_dir = self.config.get('output', {}).get('output_dir', 'dry_run_output')
@@ -432,16 +458,33 @@ class AnalyticsJob:
                 # Create output directory if it doesn't exist
                 os.makedirs(output_dir, exist_ok=True)
                 
-                # Generate visualizations
-                if visualization_data:
-                    EventVisualizer.generate_visualizations(visualization_data, output_dir, timestamp, job_name)
+                # Enhance visualization_data with all events for each context+metric combination
+                # This ensures that visualizations show all events, not just those from the processing window
+                for context_hash, metrics_data in visualization_by_context.items():
+                    for metric_data in metrics_data:
+                        metric_name = metric_data.get('metric_name', '')
+                        # Find all events for this context_hash and metric_name
+                        matching_events = [
+                            event for event in all_events
+                            if event.get('context_hash') == context_hash and event.get('metric_name') == metric_name
+                        ]
+                        # Replace events with all matching events
+                        metric_data['events'] = matching_events
                 
-                # Generate summary report
-                if all_events:
+                # Generate visualizations - pass grouped data
+                EventVisualizer.generate_visualizations(visualization_by_context, output_dir, timestamp, job_name)
+                
+                # Generate summary report (even if no events, for exploration)
+                if all_events or (self.dry_run and all_thresholds):
                     SummaryReportGenerator.generate_summary_html(
                         all_events, visualization_data, output_dir, timestamp, job_name
                     )
                     print(f"  ✓ Generated summary report: {output_dir}/{job_name}_summary_{timestamp}.html")
+            elif self.dry_run:
+                print("\nStep 5: No visualization data available")
+                print(f"  visualization_data: {len(visualization_data) if visualization_data else 0} groups")
+                print(f"  all_thresholds: {len(all_thresholds)} thresholds")
+                print(f"  all_events: {len(all_events)} events")
             
             elapsed = time.time() - self.start_time
             print(f"\n✓ Analytics job completed successfully in {elapsed:.2f} seconds")
@@ -500,7 +543,35 @@ class AnalyticsJob:
     
     def _context_to_json(self, context_values: Dict[str, Any]) -> str:
         """Convert context values to JSON string"""
-        return json.dumps(context_values, sort_keys=True, ensure_ascii=False)
+        # Convert numpy/pandas types to native Python types for JSON serialization
+        def convert_value(v):
+            # Check for numpy types
+            if isinstance(v, (np.integer, np.floating)):
+                return v.item()
+            elif isinstance(v, np.ndarray):
+                return v.tolist()
+            elif isinstance(v, (pd.Timestamp, pd.Timedelta)):
+                return str(v)
+            elif isinstance(v, pd.Series):
+                return v.tolist()
+            # Check for numpy scalar types by class name (fallback)
+            elif type(v).__name__ in ['int64', 'int32', 'int16', 'int8', 
+                                       'uint64', 'uint32', 'uint16', 'uint8',
+                                       'float64', 'float32', 'float16',
+                                       'bool_']:
+                try:
+                    return v.item()
+                except (AttributeError, ValueError):
+                    return int(v) if isinstance(v, (np.integer,)) else float(v)
+            elif isinstance(v, dict):
+                return {k: convert_value(val) for k, val in v.items()}
+            elif isinstance(v, (list, tuple)):
+                return [convert_value(item) for item in v]
+            else:
+                return v
+        
+        converted_values = {k: convert_value(v) for k, v in context_values.items()}
+        return json.dumps(converted_values, sort_keys=True, ensure_ascii=False, default=str)
     
     def _save_dry_run_results(self, events: List[Dict[str, Any]], 
                              thresholds: List[Dict[str, Any]],
@@ -550,14 +621,8 @@ class AnalyticsJob:
             thresholds_df.to_csv(thresholds_file, index=False, encoding='utf-8')
             print(f"  ✓ Saved {len(thresholds)} thresholds to {thresholds_file}")
         
-        # Generate visualizations
-        if visualization_data:
-            EventVisualizer.generate_visualizations(visualization_data, output_dir, timestamp, job_name)
-        
-        # Generate summary report
-        if events:
-            SummaryReportGenerator.generate_summary_html(events, visualization_data, output_dir, timestamp, job_name)
-            print(f"  ✓ Generated summary report: {output_dir}/{job_name}_summary_{timestamp}.html")
+        # NOTE: Visualizations and reports are generated in Step 5, not here
+        # to avoid duplication. This method only saves raw data (events, thresholds).
 
 
 def main():

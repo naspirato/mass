@@ -1,0 +1,62 @@
+job:
+  name: tpcc_performance_analysis
+  description: Анализ метрик TPC-C производительности
+data_source:
+  ydb:
+    query: |
+        SELECT 
+          timestamp,
+          cluster,
+          warehouses,
+          duration_seconds,
+          git_branch,
+          run_type,
+          tpmC as metric_value,
+          'tpmC' as metric_name
+        FROM `perfomance/tpcc`
+        WHERE timestamp >= CurrentUtcDate() - 180 * Interval("P1D")
+      
+        UNION ALL
+      
+        SELECT 
+          timestamp,
+          cluster,
+          warehouses,
+          duration_seconds,
+          git_branch,
+          run_type,
+          newOrderLatency90 as metric_value,
+          'newOrderLatency90' as metric_name
+        FROM `perfomance/tpcc`
+        WHERE timestamp >= CurrentUtcDate() - 180 * Interval("P1D")
+          AND newOrderLatency90 IS NOT NULL
+context_fields: [cluster, warehouses, git_branch, run_type, duration_seconds]
+metric_fields: [metric_name, metric_value]
+timestamp_field: timestamp
+analytics:
+  baseline_method: rolling_mean
+  window_size: 7
+  sensitivity: 2
+  min_absolute_change: 5
+  min_relative_change: 0.05
+  hysteresis_points: 2
+  adaptive_threshold: true
+  min_data_points: 3
+metric_direction:
+  default: positive
+  tpmC: positive
+  newOrderLatency90: negative
+events:
+  detect:
+    - degradation_start
+    - improvement_start
+  min_event_duration_minutes: 15
+thresholds:
+  keep_history: true
+output:
+  write_to_ydb: true
+  log_to_console: true
+  dry_run: false
+runtime:
+  timezone: UTC
+  max_runtime_minutes: 15

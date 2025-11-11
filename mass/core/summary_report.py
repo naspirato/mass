@@ -29,15 +29,20 @@ class SummaryReportGenerator:
             timestamp: Timestamp string for filenames
             job_name: Job name for filenames
         """
-        # Create a mapping from (context_hash, metric_name) to visualization filename
+        # Create a mapping from context_hash to visualization filename
+        # Note: visualization_data is now a list (not grouped), but we need to find unique context_hashes
         viz_map = {}
         if visualization_data:
+            # Group by context_hash to find unique contexts
+            from collections import defaultdict
+            contexts_seen = set()
             for viz_data in visualization_data:
                 context_hash = viz_data.get('context_hash', '')
-                metric_name = viz_data.get('metric_name', '')
-                safe_context_hash = context_hash[:8] if context_hash else ''
-                viz_filename = f"{job_name}_event_{safe_context_hash}_{metric_name}_{timestamp}.html"
-                viz_map[(context_hash, metric_name)] = viz_filename
+                if context_hash and context_hash not in contexts_seen:
+                    safe_context_hash = context_hash[:8] if context_hash else ''
+                    viz_filename = f"{job_name}_event_{safe_context_hash}_{timestamp}.html"
+                    viz_map[context_hash] = viz_filename
+                    contexts_seen.add(context_hash)
         
         # Group events by context_hash
         events_by_context = defaultdict(list)
@@ -426,11 +431,14 @@ class SummaryReportGenerator:
                 severity = event.get('severity', 'medium').lower()
                 is_improvement = 'improvement' in event_type.lower()
                 
-                # Get visualization link
-                viz_filename = viz_map.get((context_hash, metric_name))
+                # Get visualization link (one per context, not per metric)
+                viz_filename = viz_map.get(context_hash)
                 viz_link_html = ''
                 if viz_filename:
-                    viz_link_html = f'<a href="{viz_filename}" class="event-viz-link" target="_blank">📈</a>'
+                    # Only show link for first event of each context to avoid duplicates
+                    is_first_event_in_context = (event == events[0])
+                    if is_first_event_in_context:
+                        viz_link_html = f'<a href="{viz_filename}" class="event-viz-link" target="_blank">📈</a>'
                 
                 # Format timestamps
                 start_time = event.get('event_start_time', '')
