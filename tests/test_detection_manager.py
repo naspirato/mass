@@ -85,6 +85,52 @@ class TestDetectionManager(unittest.TestCase):
                 self.assertEqual(event.get('detector_id'), default_result.detector_id)
                 self.assertEqual(event.get('detector_label'), default_result.detector_label)
 
+    def test_disabled_detectors_are_ignored_but_default_falls_back(self):
+        series = self._build_series()
+        baseline_calc = BaselineCalculator(self.config)
+        baseline_result = baseline_calc.compute_baseline_and_thresholds(series)
+
+        config = dict(self.config)
+        events_cfg = dict(config['events'])
+        detectors_cfg = dict(events_cfg['detectors'])
+        detectors_cfg['pyod_iforest'] = dict(detectors_cfg['pyod_iforest'])
+        detectors_cfg['pyod_iforest']['enabled'] = False
+        events_cfg['detectors'] = detectors_cfg
+        events_cfg['default_detector'] = 'pyod_iforest'
+        events_cfg['compare_detectors'] = ['baseline_threshold', 'pyod_iforest']
+        config['events'] = events_cfg
+
+        manager = DetectionManager(config)
+
+        self.assertEqual(set(manager.detectors.keys()), {'baseline_threshold'})
+        self.assertEqual(manager.get_compare_detector_ids(), ['baseline_threshold'])
+
+        default_result = manager.detect_default(series, baseline_result, metric_name='duration_ms')
+        self.assertEqual(default_result.detector_id, 'baseline_threshold')
+
+    def test_list_form_detectors_builds_and_defaults(self):
+        series = self._build_series()
+        baseline_calc = BaselineCalculator(self.config)
+        baseline_result = baseline_calc.compute_baseline_and_thresholds(series)
+
+        config = dict(self.config)
+        config['events'] = dict(self.config['events'])
+        config['events']['detectors'] = [
+            {'id': 'baseline_threshold', 'type': 'threshold', 'label': 'Baseline Threshold'},
+            {'id': 'ruptures_binseg', 'type': 'ruptures', 'enabled': False}
+        ]
+        config['events'].pop('default_detector', None)
+        config['events']['compare_detectors'] = ['baseline_threshold', 'ruptures_binseg']
+
+        manager = DetectionManager(config)
+
+        self.assertEqual(manager.get_default_detector_id(), 'baseline_threshold')
+        self.assertEqual(set(manager.detectors.keys()), {'baseline_threshold'})
+
+        results = manager.detect_all(series, baseline_result, metric_name='duration_ms')
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].detector_id, 'baseline_threshold')
+
 
 if __name__ == '__main__':
     unittest.main()
