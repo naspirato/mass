@@ -751,50 +751,89 @@
                 
                 <div class="section-title" style="margin-top: 30px; font-size: 18px;">⚙️ Настройки вариантов</div>
                 
-                <div class="form-group">
-                    <label class="checkbox-group">
-                        <input type="checkbox" id="varyBaselineMethod" checked>
-                        <span>Варьировать метод baseline</span>
+                <div class="form-group" style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-bottom: 15px;">
+                    <label class="radio-group" style="margin: 0;">
+                        <input type="radio" name="exploreMode" value="manual" checked>
+                        <span>Ручной подбор параметров</span>
                     </label>
-                    <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
-                        Будет создано 3 варианта: rolling_mean, median, zscore
+                    <label class="radio-group" style="margin: 0;">
+                        <input type="radio" name="exploreMode" value="autodetectors">
+                        <span>Сравнение автодетекторов</span>
+                    </label>
+                </div>
+                
+                <div id="manualVariantControls">
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="varyBaselineMethod" checked>
+                            <span>Варьировать метод baseline</span>
+                        </label>
+                        <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+                            Будет создано 3 варианта: rolling_mean, median, zscore
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="varyWindowSize" checked>
+                            <span>Варьировать размер окна (window_size)</span>
+                        </label>
+                        <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+                            Будет создано 3 варианта: 7, 14, 30 точек
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="varySensitivity" checked>
+                            <span>Варьировать чувствительность (sensitivity)</span>
+                        </label>
+                        <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+                            Будет создано 3 варианта: 1.5, 2.0, 2.5
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="varyAdaptiveThreshold">
+                            <span>Варьировать адаптивные пороги (adaptive_threshold)</span>
+                        </label>
+                        <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
+                            Будет создано 2 варианта: true, false
+                        </div>
+                    </div>
+                    
+                    <div id="manualVariantInfo" style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 6px; border-left: 4px solid #ffc107;">
+                        <strong>ℹ️ Информация:</strong> Все варианты будут запущены параллельно. 
+                        Общее количество вариантов = произведение выбранных параметров. 
+                        Например, если выбрано 3 параметра с 3 вариантами каждый, будет создано до 27 вариантов.
                     </div>
                 </div>
                 
-                <div class="form-group">
+                <div class="form-group" id="detectorVariantControls" style="display: none;">
+                    <div style="margin-bottom: 10px; font-weight: 500;">Выберите комбинации детекторов для сравнения:</div>
                     <label class="checkbox-group">
-                        <input type="checkbox" id="varyWindowSize" checked>
-                        <span>Варьировать размер окна (window_size)</span>
+                        <input type="checkbox" value="baseline_only" checked>
+                        <span>Baseline Threshold</span>
+                    </label>
+                    <label class="checkbox-group">
+                        <input type="checkbox" value="baseline_pyod">
+                        <span>Baseline + PyOD Isolation Forest</span>
+                    </label>
+                    <label class="checkbox-group">
+                        <input type="checkbox" value="baseline_ruptures">
+                        <span>Baseline + Ruptures Change Point</span>
                     </label>
                     <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
-                        Будет создано 3 варианта: 7, 14, 30 точек
+                        Для каждого выбранного набора будет выполнен отдельный прогон с соответствующими автодетекторами.
+                    </div>
+                    <div style="margin-top: 15px; padding: 12px; background: #e3f2fd; border-radius: 6px; border-left: 4px solid #2196F3;">
+                        <strong>ℹ️ Совет:</strong> Вы можете расширить список комбинаций автодетекторов в коде интерфейса.
                     </div>
                 </div>
                 
-                <div class="form-group">
-                    <label class="checkbox-group">
-                        <input type="checkbox" id="varySensitivity" checked>
-                        <span>Варьировать чувствительность (sensitivity)</span>
-                    </label>
-                    <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
-                        Будет создано 3 варианта: 1.5, 2.0, 2.5
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label class="checkbox-group">
-                        <input type="checkbox" id="varyAdaptiveThreshold">
-                        <span>Варьировать адаптивные пороги (adaptive_threshold)</span>
-                    </label>
-                    <div style="margin-left: 25px; margin-top: 8px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px; color: #666;">
-                        Будет создано 2 варианта: true, false
-                    </div>
-                </div>
-                
-                <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 6px; border-left: 4px solid #ffc107;">
-                    <strong>ℹ️ Информация:</strong> Все варианты будут запущены параллельно. 
-                    Общее количество вариантов = произведение выбранных параметров. 
-                    Например, если выбрано 3 параметра с 3 вариантами каждый, будет создано до 27 вариантов.
+                <div id="variantModeInfo" style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 6px; border-left: 4px solid #ffc107;">
+                    <strong>ℹ️ Информация:</strong> В режиме автодетекторов каждый выбранный набор запускается отдельным вариантом. В ручном режиме количество вариантов равно произведению выбранных параметров.
                 </div>
                 
                 <button type="button" class="btn-generate" onclick="runExploration()" id="runExplorationBtn" style="margin-top: 20px;" disabled>
@@ -813,6 +852,40 @@
     
     <script>
         let currentMode = 'generate';
+        let explorationMode = 'manual';
+        
+        function updateExplorationModeUI() {
+            const manualControls = document.getElementById('manualVariantControls');
+            const detectorControls = document.getElementById('detectorVariantControls');
+            const variantInfo = document.getElementById('variantModeInfo');
+            
+            if (manualControls) {
+                manualControls.style.display = explorationMode === 'manual' ? '' : 'none';
+            }
+            if (detectorControls) {
+                detectorControls.style.display = explorationMode === 'autodetectors' ? '' : 'none';
+            }
+            if (variantInfo) {
+                if (explorationMode === 'manual') {
+                    variantInfo.innerHTML = '<strong>ℹ️ Информация:</strong> В ручном режиме количество вариантов = произведение выбранных параметров (baseline, окно, чувствительность, адаптивный порог).';
+                } else {
+                    variantInfo.innerHTML = '<strong>ℹ️ Информация:</strong> В режиме автодетекторов каждый выбранный набор запускается как отдельный вариант. Аналитические параметры берутся из базового конфига.';
+                }
+            }
+        }
+        
+        function setupExplorationModeControls() {
+            const modeInputs = document.querySelectorAll('input[name="exploreMode"]');
+            modeInputs.forEach(input => {
+                input.addEventListener('change', () => {
+                    if (input.checked) {
+                        explorationMode = input.value;
+                        updateExplorationModeUI();
+                    }
+                });
+            });
+            updateExplorationModeUI();
+        }
         
         function switchMode(mode) {
             currentMode = mode;
@@ -839,6 +912,7 @@
                 }
                 if (formSection) formSection.style.display = 'none';
                 if (previewSection) previewSection.style.display = 'none';
+                setupExplorationModeControls();
                 // Load saved data list when entering explore mode
                 loadSavedDataList();
             } else {
@@ -1045,18 +1119,35 @@
                 return;
             }
             
-            // Collect variant settings
-            const variants = {
-                vary_baseline_method: document.getElementById('varyBaselineMethod').checked,
-                vary_window_size: document.getElementById('varyWindowSize').checked,
-                vary_sensitivity: document.getElementById('varySensitivity').checked,
-                vary_adaptive_threshold: document.getElementById('varyAdaptiveThreshold').checked
-            };
+            const mode = explorationMode || 'manual';
             
-            // Check if at least one variant is selected
-            if (!Object.values(variants).some(v => v)) {
-                alert('Выберите хотя бы один параметр для варьирования');
-                return;
+            // Collect variant settings
+            const variants = { mode };
+            if (mode === 'manual') {
+                variants.vary_baseline_method = document.getElementById('varyBaselineMethod').checked;
+                variants.vary_window_size = document.getElementById('varyWindowSize').checked;
+                variants.vary_sensitivity = document.getElementById('varySensitivity').checked;
+                variants.vary_adaptive_threshold = document.getElementById('varyAdaptiveThreshold').checked;
+                
+                const manualFlags = [
+                    variants.vary_baseline_method,
+                    variants.vary_window_size,
+                    variants.vary_sensitivity,
+                    variants.vary_adaptive_threshold
+                ];
+                
+                if (!manualFlags.some(Boolean)) {
+                    alert('Выберите хотя бы один параметр для варьирования');
+                    return;
+                }
+            } else {
+                const detectorChecks = Array.from(document.querySelectorAll('#detectorVariantControls input[type="checkbox"]:checked'));
+                const detectorVariants = detectorChecks.map(cb => cb.value);
+                if (detectorVariants.length === 0) {
+                    alert('Выберите хотя бы один набор автодетекторов для сравнения');
+                    return;
+                }
+                variants.detector_variants = detectorVariants;
             }
             
             // Show status
@@ -1141,15 +1232,23 @@
                 return;
             }
             
-            // Create comparison table
+            const isAutodetectorMode = results.some(result => {
+                const variant = result.variant || {};
+                return variant.mode === 'autodetectors' || variant.detector_variant || result.detector_variant;
+            });
+            
             let html = '<div style="overflow-x: auto;">';
             html += '<table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
             html += '<thead><tr style="background: #667eea; color: white;">';
             html += '<th style="padding: 12px; text-align: left; border-bottom: 2px solid #5568d3;">Вариант</th>';
-            html += '<th style="padding: 12px; text-align: left;">Метод</th>';
-            html += '<th style="padding: 12px; text-align: left;">Окно</th>';
-            html += '<th style="padding: 12px; text-align: left;">Чувствительность</th>';
-            html += '<th style="padding: 12px; text-align: left;">Адаптивный</th>';
+            if (isAutodetectorMode) {
+                html += '<th style="padding: 12px; text-align: left;">Набор детекторов</th>';
+            } else {
+                html += '<th style="padding: 12px; text-align: left;">Метод</th>';
+                html += '<th style="padding: 12px; text-align: left;">Окно</th>';
+                html += '<th style="padding: 12px; text-align: left;">Чувствительность</th>';
+                html += '<th style="padding: 12px; text-align: left;">Адаптивный</th>';
+            }
             html += '<th style="padding: 12px; text-align: center;">Событий</th>';
             html += '<th style="padding: 12px; text-align: center;">Бейзлайнов</th>';
             html += '<th style="padding: 12px; text-align: center;">Действия</th>';
@@ -1163,10 +1262,20 @@
                 
                 html += '<tr style="border-bottom: 1px solid #e0e0e0;">';
                 html += `<td style="padding: 12px; font-weight: 500;">Вариант ${index + 1}</td>`;
-                html += `<td style="padding: 12px;">${variant.baseline_method || '-'}</td>`;
-                html += `<td style="padding: 12px;">${variant.window_size || '-'}</td>`;
-                html += `<td style="padding: 12px;">${variant.sensitivity || '-'}</td>`;
-                html += `<td style="padding: 12px;">${variant.adaptive_threshold ? 'Да' : 'Нет'}</td>`;
+                
+                if (isAutodetectorMode) {
+                    const detectorLabel = variant.detector_label || variant.detector_variant || `Набор ${index + 1}`;
+                    const detectorDetails = Array.isArray(variant.detectors_list)
+                        ? variant.detectors_list.join(', ')
+                        : (variant.detectors_description || detectorLabel);
+                    html += `<td style="padding: 12px;">${detectorLabel}<div style="color: #666; font-size: 12px; margin-top: 4px;">${detectorDetails}</div></td>`;
+                } else {
+                    html += `<td style="padding: 12px;">${variant.baseline_method || '-'}</td>`;
+                    html += `<td style="padding: 12px;">${variant.window_size || '-'}</td>`;
+                    html += `<td style="padding: 12px;">${variant.sensitivity || '-'}</td>`;
+                    html += `<td style="padding: 12px;">${variant.adaptive_threshold ? 'Да' : 'Нет'}</td>`;
+                }
+                
                 html += `<td style="padding: 12px; text-align: center;"><strong>${eventsCount}</strong></td>`;
                 html += `<td style="padding: 12px; text-align: center;">${baselinesCount}</td>`;
                 html += '<td style="padding: 12px; text-align: center; vertical-align: top;">';
@@ -1175,7 +1284,6 @@
                 } else {
                     html += '<span style="color: #999; font-size: 12px;">Нет отчета</span>';
                 }
-                // Show recommendations if no events
                 if (eventsCount === 0 && result.recommendations && result.recommendations.length > 0) {
                     html += `<div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 4px; font-size: 11px; text-align: left; max-width: 300px;">`;
                     result.recommendations.forEach(rec => {
@@ -1183,8 +1291,6 @@
                     });
                     html += `</div>`;
                 }
-                // NOTE: Individual graph buttons are NOT generated here anymore
-                // Graphs are shown only when a context is selected in the section below
                 html += '</td>';
                 html += '</tr>';
             });
@@ -1227,6 +1333,9 @@
             
             resultsContent.innerHTML = html;
         }
+
+        // Ensure exploration mode UI is initialized on load
+        setupExplorationModeControls();
         
         function generateSummaryReportsSection(results) {
             // Extract contexts from results (from first variant that has contexts_info)
@@ -1247,6 +1356,11 @@
                 const reportPath = result.report_path || '';
                 const eventsCount = result.events_count || 0;
                 const baselinesCount = result.baselines_count || 0;
+                const isAutodetectorVariant = variant.mode === 'autodetectors';
+                const detectorLabel = variant.detector_label || variant.detector_variant;
+                const detectorDetails = Array.isArray(variant.detectors_list)
+                    ? variant.detectors_list.join(', ')
+                    : (variant.detectors_description || detectorLabel || '');
                 
                 html += '<div style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; background: #f9f9f9; transition: transform 0.2s, box-shadow 0.2s;" ';
                 html += 'onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 8px rgba(0,0,0,0.1)\';" ';
@@ -1254,9 +1368,16 @@
                 html += '>';
                 
                 html += `<div style="font-weight: 600; color: #333; margin-bottom: 8px; font-size: 16px;">Вариант ${index + 1}</div>`;
-                html += `<div style="font-size: 12px; color: #666; margin-bottom: 10px;">`;
-                html += `${variant.baseline_method || 'N/A'} | окно: ${variant.window_size || 'N/A'}`;
-                html += `</div>`;
+                html += '<div style="font-size: 12px; color: #666; margin-bottom: 10px;">';
+                if (isAutodetectorVariant) {
+                    html += detectorLabel || 'Набор автодетекторов';
+                    if (detectorDetails && detectorDetails !== detectorLabel) {
+                        html += `<div style="margin-top: 4px;">${detectorDetails}</div>`;
+                    }
+                } else {
+                    html += `${variant.baseline_method || 'N/A'} | окно: ${variant.window_size || 'N/A'}`;
+                }
+                html += '</div>';
                 
                 html += '<div style="display: flex; gap: 10px; margin-bottom: 10px; font-size: 12px;">';
                 html += `<span style="padding: 4px 8px; background: #ffebee; color: #c62828; border-radius: 4px;">${eventsCount} событий</span>`;
@@ -1556,7 +1677,20 @@
                         allVariantsForMetric.forEach(({ variantIndex, viz, result }) => {
                             const variant = viz.variant || {};
                             const variantLabel = `Вариант ${variantIndex + 1}`;
-                            const variantInfo = `${variant.baseline_method || 'N/A'} | окно: ${variant.window_size || 'N/A'} | чувств: ${variant.sensitivity || 'N/A'}`;
+                            const isAutodetectorVariant = variant.mode === 'autodetectors';
+                            let variantInfoHtml;
+                            if (isAutodetectorVariant) {
+                                const detectorLabel = variant.detector_label || variant.detector_variant || 'Набор автодетекторов';
+                                const detectorDetails = Array.isArray(variant.detectors_list)
+                                    ? variant.detectors_list.join(', ')
+                                    : (variant.detectors_description || detectorLabel);
+                                variantInfoHtml = `${detectorLabel}`;
+                                if (detectorDetails && detectorDetails !== detectorLabel) {
+                                    variantInfoHtml += `<div style="margin-top: 2px; color: #888;">${detectorDetails}</div>`;
+                                }
+                            } else {
+                                variantInfoHtml = `${variant.baseline_method || 'N/A'} | окно: ${variant.window_size || 'N/A'} | чувств: ${variant.sensitivity || 'N/A'}`;
+                            }
                             // Use metric-specific events count
                             const positiveEvents = viz.positiveEventsCount || 0;
                             const negativeEvents = viz.negativeEventsCount || 0;
@@ -1578,7 +1712,7 @@
                                 // Variant info
                                 html += '<div style="padding: 12px; background: #f9f9f9;">';
                                 html += `<div style="font-weight: 600; color: #333; margin-bottom: 4px;">${variantLabel}</div>`;
-                                html += `<div style="font-size: 12px; color: #666;">${variantInfo}</div>`;
+                                html += `<div style="font-size: 12px; color: #666;">${variantInfoHtml}</div>`;
                                 
                                 // Events info with positive/negative split
                                 if (eventsCount > 0) {
@@ -1810,7 +1944,20 @@
                         allVariantsForMetric.forEach(({ variantIndex, viz, result }) => {
                             const variant = viz.variant || {};
                             const variantLabel = `Вариант ${variantIndex + 1}`;
-                            const variantInfo = `${variant.baseline_method || 'N/A'} | окно: ${variant.window_size || 'N/A'} | чувств: ${variant.sensitivity || 'N/A'}`;
+                            const isAutodetectorVariant = variant.mode === 'autodetectors';
+                            let variantInfoHtml;
+                            if (isAutodetectorVariant) {
+                                const detectorLabel = variant.detector_label || variant.detector_variant || 'Набор автодетекторов';
+                                const detectorDetails = Array.isArray(variant.detectors_list)
+                                    ? variant.detectors_list.join(', ')
+                                    : (variant.detectors_description || detectorLabel);
+                                variantInfoHtml = `${detectorLabel}`;
+                                if (detectorDetails && detectorDetails !== detectorLabel) {
+                                    variantInfoHtml += `<div style="margin-top: 2px; color: #888;">${detectorDetails}</div>`;
+                                }
+                            } else {
+                                variantInfoHtml = `${variant.baseline_method || 'N/A'} | окно: ${variant.window_size || 'N/A'} | чувств: ${variant.sensitivity || 'N/A'}`;
+                            }
                             // Use metric-specific events count
                             const positiveEvents = viz.positiveEventsCount || 0;
                             const negativeEvents = viz.negativeEventsCount || 0;
@@ -1830,7 +1977,7 @@
                             
                             graphsHtml += '<div style="padding: 12px; background: #f9f9f9;">';
                             graphsHtml += `<div style="font-weight: 600; color: #333; margin-bottom: 4px;">${variantLabel}</div>`;
-                            graphsHtml += `<div style="font-size: 12px; color: #666;">${variantInfo}</div>`;
+                            graphsHtml += `<div style="font-size: 12px; color: #666;">${variantInfoHtml}</div>`;
                             
                             // Events info with positive/negative split
                             if (eventsCount > 0) {

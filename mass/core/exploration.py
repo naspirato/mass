@@ -17,6 +17,74 @@ import concurrent.futures
 from .config_loader import ConfigLoader
 from .analytics_job import AnalyticsJob
 
+# Predefined detector variant presets for exploration mode
+DETECTOR_VARIANTS = {
+    "baseline_only": {
+        "label": "Baseline Threshold",
+        "detectors": {
+            "baseline_threshold": {
+                "type": "baseline_threshold",
+                "label": "Baseline Threshold",
+                "enabled": True,
+            },
+        },
+        "default": "baseline_threshold",
+        "compare": [],
+    },
+    "baseline_pyod": {
+        "label": "Baseline + PyOD Isolation Forest",
+        "detectors": {
+            "baseline_threshold": {
+                "type": "baseline_threshold",
+                "label": "Baseline Threshold",
+                "enabled": True,
+            },
+            "pyod_iforest": {
+                "type": "pyod_iforest",
+                "label": "PyOD Isolation Forest",
+                "enabled": True,
+                "params": {
+                    "contamination": 0.1,
+                    "min_points": 15,
+                },
+            },
+        },
+        "default": "pyod_iforest",
+        "compare": ["baseline_threshold"],
+    },
+    "baseline_ruptures": {
+        "label": "Baseline + Ruptures Change Point",
+        "detectors": {
+            "baseline_threshold": {
+                "type": "baseline_threshold",
+                "label": "Baseline Threshold",
+                "enabled": True,
+            },
+            "ruptures_binseg": {
+                "type": "ruptures",
+                "label": "Ruptures Change Point",
+                "enabled": True,
+                "params": {
+                    "window": 10,
+                    "penalty": 10,
+                },
+            },
+        },
+        "default": "ruptures_binseg",
+        "compare": ["baseline_threshold"],
+    },
+}
+
+def _derive_detectors_list(detectors_cfg: Dict[str, Any]) -> List[str]:
+    """Return a list of detector labels from detectors config dictionary."""
+    if not isinstance(detectors_cfg, dict):
+        return []
+    detectors_list = []
+    for det_id, det_cfg in detectors_cfg.items():
+        label = det_cfg.get("label") or det_cfg.get("name") or det_id.replace("_", " ").title()
+        detectors_list.append(label)
+    return detectors_list
+
 
 class ExplorationRunner:
     """Run analytics with multiple configuration variants"""
@@ -42,61 +110,64 @@ class ExplorationRunner:
         except Exception as e:
             raise ValueError(f"Failed to load base config: {e}")
     
-    def generate_variants(self, variant_settings: Dict[str, bool]) -> List[Dict[str, Any]]:
+    def generate_variants(self, variant_settings: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Generate configuration variants based on settings
-        
-        Args:
-            variant_settings: Dictionary with boolean flags for which parameters to vary
-                - vary_baseline_method: Vary baseline_method
-                - vary_window_size: Vary window_size
-                - vary_sensitivity: Vary sensitivity
-                - vary_adaptive_threshold: Vary adaptive_threshold
-        
-        Returns:
-            List of variant configuration dictionaries
+        Generate configuration variants based on settings.
+        Supports two modes:
+            - manual: vary analytical parameters (baseline, window size, etc.)
+            - autodetectors: compare predefined detector combinations
         """
-        variants = []
+        variant_settings = variant_settings or {}
+        mode = variant_settings.get('mode', 'manual')
         
-        # Define parameter values to try
+        if mode == 'autodetectors':
+            detector_variants = self._generate_detector_variants(variant_settings)
+            if detector_variants:
+                return detector_variants
+            # Fallback to manual if no detector variants were produced
+        
+        return self._generate_manual_variants(variant_settings)
+    
+    def _generate_manual_variants(self, variant_settings: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate variants by varying analytical parameters."""
+        variants: List[Dict[str, Any]] = []
+        
         baseline_methods = ['rolling_mean', 'median', 'zscore'] if variant_settings.get('vary_baseline_method', False) else [None]
         window_sizes = [7, 14, 30] if variant_settings.get('vary_window_size', False) else [None]
         sensitivities = [1.5, 2.0, 2.5] if variant_settings.get('vary_sensitivity', False) else [None]
         adaptive_thresholds = [True, False] if variant_settings.get('vary_adaptive_threshold', False) else [None]
         
-        # Get base values from config
         base_analytics = self.base_config.get('analytics', {})
         base_baseline_method = base_analytics.get('baseline_method', 'rolling_mean')
         base_window_size = base_analytics.get('window_size', 7)
         base_sensitivity = base_analytics.get('sensitivity', 2.0)
         base_adaptive_threshold = base_analytics.get('adaptive_threshold', True)
         
-        # Generate all combinations
         variant_id = 0
         for baseline_method in baseline_methods:
             for window_size in window_sizes:
                 for sensitivity in sensitivities:
                     for adaptive_threshold in adaptive_thresholds:
-                        # Create variant config
                         variant_config = copy.deepcopy(self.base_config)
                         
-                        # Apply variant values (use base if None)
-                        variant_config['analytics']['baseline_method'] = baseline_method if baseline_method is not None else base_baseline_method
-                        variant_config['analytics']['window_size'] = window_size if window_size is not None else base_window_size
-                        variant_config['analytics']['sensitivity'] = sensitivity if sensitivity is not None else base_sensitivity
-                        variant_config['analytics']['adaptive_threshold'] = adaptive_threshold if adaptive_threshold is not None else base_adaptive_threshold
+                        analytics_cfg = variant_config.setdefault('analytics', {})
+                        analytics_cfg['baseline_method'] = baseline_method if baseline_method is not None else base_baseline_method
+                        analytics_cfg['window_size'] = window_size if window_size is not None else base_window_size
+                        analytics_cfg['sensitivity'] = sensitivity if sensitivity is not None else base_sensitivity
+                        analytics_cfg['adaptive_threshold'] = adaptive_threshold if adaptive_threshold is not None else base_adaptive_threshold
                         
-                        # Update job name to include variant info
                         job_name = variant_config.get('job', {}).get('name', 'analytics_job')
                         variant_config['job']['name'] = f"{job_name}_explore_{variant_id}"
                         
-                        # Store variant metadata
+                        detectors_cfg = variant_config.get('events', {}).get('detectors', {})
                         variant_metadata = {
                             'id': variant_id,
-                            'baseline_method': variant_config['analytics']['baseline_method'],
-                            'window_size': variant_config['analytics']['window_size'],
-                            'sensitivity': variant_config['analytics']['sensitivity'],
-                            'adaptive_threshold': variant_config['analytics']['adaptive_threshold'],
+                            'mode': 'manual',
+                            'baseline_method': analytics_cfg['baseline_method'],
+                            'window_size': analytics_cfg['window_size'],
+                            'sensitivity': analytics_cfg['sensitivity'],
+                            'adaptive_threshold': analytics_cfg['adaptive_threshold'],
+                            'detectors_list': _derive_detectors_list(detectors_cfg),
                         }
                         
                         variants.append({
@@ -104,24 +175,67 @@ class ExplorationRunner:
                             'metadata': variant_metadata,
                             'id': variant_id
                         })
-                        
                         variant_id += 1
         
-        # If no variants were generated (all None), create at least one with base config
         if not variants:
             variant_config = copy.deepcopy(self.base_config)
             job_name = variant_config.get('job', {}).get('name', 'analytics_job')
             variant_config['job']['name'] = f"{job_name}_explore_0"
+            detectors_cfg = variant_config.get('events', {}).get('detectors', {})
             variants.append({
                 'config': variant_config,
                 'metadata': {
                     'id': 0,
+                    'mode': 'manual',
                     'baseline_method': base_baseline_method,
                     'window_size': base_window_size,
                     'sensitivity': base_sensitivity,
                     'adaptive_threshold': base_adaptive_threshold,
+                    'detectors_list': _derive_detectors_list(detectors_cfg),
                 },
                 'id': 0
+            })
+        
+        return variants
+    
+    def _generate_detector_variants(self, variant_settings: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate variants based on predefined detector combinations."""
+        presets_requested = variant_settings.get('detector_variants')
+        if presets_requested:
+            preset_ids = [preset for preset in presets_requested if preset in DETECTOR_VARIANTS]
+        else:
+            preset_ids = list(DETECTOR_VARIANTS.keys())
+        
+        variants: List[Dict[str, Any]] = []
+        job_name = self.base_config.get('job', {}).get('name', 'analytics_job')
+        
+        for variant_id, preset_id in enumerate(preset_ids):
+            preset = DETECTOR_VARIANTS.get(preset_id)
+            if not preset:
+                continue
+            
+            variant_config = copy.deepcopy(self.base_config)
+            events_cfg = variant_config.setdefault('events', {})
+            events_cfg['detectors'] = copy.deepcopy(preset['detectors'])
+            events_cfg['default_detector'] = preset.get('default')
+            events_cfg['compare_detectors'] = copy.deepcopy(preset.get('compare', []))
+            
+            variant_config['job']['name'] = f"{job_name}_det_{preset_id}_{variant_id}"
+            
+            detectors_list = _derive_detectors_list(events_cfg.get('detectors', {}))
+            variant_metadata = {
+                'id': variant_id,
+                'mode': 'autodetectors',
+                'detector_variant': preset_id,
+                'detector_label': preset.get('label', preset_id.replace('_', ' ').title()),
+                'detectors_list': detectors_list,
+                'detectors_description': ', '.join(detectors_list) if detectors_list else preset.get('label', preset_id),
+            }
+            
+            variants.append({
+                'config': variant_config,
+                'metadata': variant_metadata,
+                'id': variant_id
             })
         
         return variants
@@ -468,7 +582,8 @@ class ExplorationRunner:
                             'events_count': metric_events['total'],
                             'positive_events_count': metric_events['positive'],
                             'negative_events_count': metric_events['negative'],
-                            'detector_results': detector_results
+                            'detector_results': detector_results,
+                            'variant': variant_metadata,
                         })
                 else:
                     # Last resort: search all possible paths for any event files with job prefix
@@ -567,7 +682,8 @@ class ExplorationRunner:
                                         'events_count': metric_events['total'],
                                         'positive_events_count': metric_events['positive'],
                                         'negative_events_count': metric_events['negative'],
-                                        'detector_results': detector_results
+                                        'detector_results': detector_results,
+                                        'variant': variant_metadata,
                                     })
                                 break
             
