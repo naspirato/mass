@@ -676,6 +676,109 @@ def run_auto_tune():
         }), 500
 
 
+@app.route('/api/fast_research', methods=['POST'])
+def run_fast_research():
+    """Run fast research with anomaly detection tools"""
+    try:
+        data = request.get_json()
+        config_path = data.get('config_path')
+        data_file = data.get('data_file')
+        
+        if not config_path:
+            return jsonify({
+                'success': False,
+                'error': 'config_path is required'
+            }), 400
+        
+        if not data_file:
+            return jsonify({
+                'success': False,
+                'error': 'data_file is required'
+            }), 400
+        
+        # Resolve config path
+        if not os.path.isabs(config_path):
+            config_path = os.path.join(PROJECT_ROOT, config_path)
+        
+        # Security: ensure path is within project root
+        try:
+            config_path = os.path.abspath(config_path)
+            project_root_abs = os.path.abspath(PROJECT_ROOT)
+            if not config_path.startswith(project_root_abs):
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid config_path'
+                }), 400
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid config_path: {str(e)}'
+            }), 400
+        
+        if not os.path.exists(config_path):
+            return jsonify({
+                'success': False,
+                'error': f'Config file not found: {config_path}'
+            }), 404
+        
+        # Only allow YAML files
+        if not (config_path.endswith('.yaml') or config_path.endswith('.yml')):
+            return jsonify({
+                'success': False,
+                'error': 'Only YAML files are allowed'
+            }), 400
+        
+        # Resolve data_file path
+        if not os.path.isabs(data_file):
+            data_file = os.path.join(PROJECT_ROOT, data_file)
+        
+        # Security: ensure path is within project root
+        try:
+            data_file = os.path.abspath(data_file)
+            project_root_abs = os.path.abspath(PROJECT_ROOT)
+            if not data_file.startswith(project_root_abs):
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid data_file path'
+                }), 400
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid data_file path: {str(e)}'
+            }), 400
+        
+        if not os.path.exists(data_file):
+            return jsonify({
+                'success': False,
+                'error': f'Data file not found: {data_file}'
+            }), 404
+        
+        # Import fast research module
+        from mass.core.fast_research import FastResearchRunner
+        
+        # Create runner
+        runner = FastResearchRunner(config_path, data_file=data_file)
+        
+        # Run research
+        results = runner.run_research()
+        
+        # Timestamps are already converted to strings in _generate_graph
+        # No need to convert again here
+        
+        return jsonify({
+            'success': True,
+            'results': results
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='MASS (Metric Analytic Super System) UI Server')
