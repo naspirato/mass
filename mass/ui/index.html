@@ -1916,6 +1916,12 @@
                     statusDiv.style.background = '#d4edda';
                     statusDiv.style.color = '#155724';
                     statusDiv.innerHTML = '<strong>✅ Исследование завершено!</strong>';
+                    
+                    // Save config and data file paths for later use (e.g., saving context data)
+                    window.fastResearchConfigPath = configSelect.value;
+                    window.fastResearchDataFile = dataSelect.value;
+                    window.fastResearchResults = data.results;
+                    
                     displayFastResearchResults(data.results);
                     resultsDiv.style.display = 'block';
                 } else {
@@ -2044,9 +2050,14 @@
                     html += `<div style="margin-top: 15px; padding: 10px; background: white; border-radius: 6px;">`;
                     html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">`;
                     html += `<div style="font-size: 14px; color: #666;"><strong>График результатов:</strong></div>`;
+                    html += `<div style="display: flex; gap: 8px; align-items: center;">`;
+                    html += `<button onclick="saveContextData(${idx})" id="saveContextDataBtn_${idx}" style="padding: 6px 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 5px;">`;
+                    html += `<span>💾</span> <span>Сохранить данные</span>`;
+                    html += `</button>`;
                     html += `<button onclick="openGraphFullscreen(${idx})" style="padding: 6px 12px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 5px;">`;
                     html += `<span>🔍</span> <span>Полный экран</span>`;
                     html += `</button>`;
+                    html += `</div>`;
                     html += `</div>`;
                     html += `<div id="fastResearchGraph_${idx}" style="width: 100%; height: 600px; border: 1px solid #e0e0e0; border-radius: 4px; background: white;"></div>`;
                     html += `<div id="fastResearchGraphLoading_${idx}" style="margin-top: 10px; font-size: 12px; color: #999; text-align: center;">Загрузка графика...</div>`;
@@ -2304,6 +2315,75 @@
         
         // Make function globally accessible
         window.openGraphFullscreen = openGraphFullscreen;
+        
+        // Function to save context data
+        async function saveContextData(contextIdx) {
+            // Get saved config and data file from fast research results
+            const fastResearchConfigPath = window.fastResearchConfigPath;
+            const fastResearchDataFile = window.fastResearchDataFile;
+            const fastResearchResults = window.fastResearchResults;
+            
+            if (!fastResearchResults || !fastResearchResults.contexts || !fastResearchResults.contexts[contextIdx]) {
+                alert('❌ Ошибка: данные контекста не найдены');
+                return;
+            }
+            
+            const context = fastResearchResults.contexts[contextIdx];
+            const contextHash = context.context_hash;
+            
+            if (!contextHash) {
+                alert('❌ Ошибка: не найден hash контекста');
+                return;
+            }
+            
+            if (!fastResearchConfigPath || !fastResearchDataFile) {
+                alert('❌ Ошибка: не найдены пути к конфигу или данным');
+                return;
+            }
+            
+            const saveBtn = document.getElementById(`saveContextDataBtn_${contextIdx}`);
+            const originalText = saveBtn ? saveBtn.innerHTML : '';
+            
+            try {
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '<span>⏳</span> <span>Сохранение...</span>';
+                }
+                
+                const response = await fetch('/api/fast_research/save-context-data', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        config_path: fastResearchConfigPath,
+                        data_file: fastResearchDataFile,
+                        context_hash: contextHash
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✅ Данные сохранены!\n\nФайл: ${data.filename}\nПуть: ${data.path}\nСтрок: ${data.rows}\n\nВы можете использовать этот файл для повторного анализа.`);
+                    // Optionally reload saved data list
+                    if (typeof loadSavedDataList === 'function') {
+                        loadSavedDataList();
+                    }
+                } else {
+                    alert(`❌ Ошибка при сохранении: ${data.error || 'Неизвестная ошибка'}`);
+                }
+            } catch (error) {
+                console.error('Error saving context data:', error);
+                alert(`❌ Ошибка при сохранении: ${error.message}`);
+            } finally {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalText;
+                }
+            }
+        }
+        
+        // Make function globally accessible
+        window.saveContextData = saveContextData;
         
         async function runAutoTune() {
             const baseConfigSelect = document.getElementById('autoTuneBaseConfig');

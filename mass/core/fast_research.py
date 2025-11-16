@@ -560,11 +560,93 @@ class FastResearchRunner:
         if not all_intervals:
             return []
         
-        # Merge overlapping intervals from all methods (strict merging)
-        all_intervals = sorted(all_intervals, key=lambda x: x[0])
-        merged = [all_intervals[0]]
+        # Calculate baseline statistics for significance filtering
+        values = series.values
+        series_mean = np.mean(values)
+        series_std = np.std(values) + 1e-6
         
-        for current in all_intervals[1:]:
+        # Use statistical threshold instead of fixed percentage
+        # 1.5-2 sigma ensures we catch significant changes relative to data variability
+        min_std_multiplier = 1.5  # Minimum change in standard deviations
+        # Also keep a minimum absolute threshold to avoid catching tiny changes in very stable data
+        min_absolute_threshold = max(series_mean * 0.02, series_std * 0.5)  # At least 2% of mean OR 0.5 sigma
+        
+        def is_significant_change(start_idx: int, end_idx: int) -> bool:
+            """
+            Check if the change in interval is significant relative to the overall series.
+            
+            Criteria:
+            1. Change must be at least min_std_multiplier * std (statistical significance)
+            2. Change must also meet minimum absolute threshold (avoids tiny changes in stable data)
+            3. Change should be persistent (not just noise)
+            """
+            if end_idx - start_idx < 2:
+                return False
+            
+            interval_values = values[start_idx:end_idx + 1]
+            
+            # Calculate change using linear regression for better trend estimation
+            if len(interval_values) >= 2:
+                x_indices = np.arange(len(interval_values))
+                try:
+                    slope, intercept = np.polyfit(x_indices, interval_values, 1)
+                    trend_start = intercept
+                    trend_end = slope * (len(interval_values) - 1) + intercept
+                    abs_change = abs(trend_end - trend_start)
+                    
+                    # Criterion 1: Statistical significance (z-score like approach)
+                    # Change should be at least min_std_multiplier * std to be considered significant
+                    if abs_change < min_std_multiplier * series_std:
+                        return False
+                    
+                    # Criterion 2: Minimum absolute threshold (avoids tiny changes in very stable data)
+                    # This ensures we don't catch changes that are statistically significant but practically meaningless
+                    if abs_change < min_absolute_threshold:
+                        return False
+                    
+                    # Criterion 3: Change should be consistent (not just noise)
+                    # Use start/end window averages to reduce noise impact
+                    window_size = max(1, len(interval_values) // 5)
+                    start_window = interval_values[:window_size]
+                    end_window = interval_values[-window_size:]
+                    start_avg = np.mean(start_window)
+                    end_avg = np.mean(end_window)
+                    
+                    # Check that window averages show consistent change
+                    window_change = abs(end_avg - start_avg)
+                    
+                    # Window-based change should be at least 70% of regression-based change
+                    # This ensures the change is persistent, not just an artifact of regression
+                    if window_change < abs_change * 0.7:
+                        return False
+                    
+                    return True
+                except (np.linalg.LinAlgError, ValueError):
+                    # Fallback to simple comparison if regression fails
+                    start_avg = np.mean(interval_values[:max(1, len(interval_values) // 4)])
+                    end_avg = np.mean(interval_values[-max(1, len(interval_values) // 4):])
+                    abs_change = abs(end_avg - start_avg)
+                    
+                    # Apply same criteria
+                    return (abs_change >= min_std_multiplier * series_std and 
+                            abs_change >= min_absolute_threshold)
+            else:
+                return False
+        
+        # Filter intervals by significance before merging
+        significant_intervals = [
+            (start, end) for start, end in all_intervals
+            if is_significant_change(start, end)
+        ]
+        
+        if not significant_intervals:
+            return []
+        
+        # Merge overlapping intervals from all methods (strict merging)
+        significant_intervals = sorted(significant_intervals, key=lambda x: x[0])
+        merged = [significant_intervals[0]]
+        
+        for current in significant_intervals[1:]:
             last = merged[-1]
             # Merge only if intervals overlap or are very close (within 2 points)
             if current[0] <= last[1] + 2:

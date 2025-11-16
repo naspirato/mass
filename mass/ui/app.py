@@ -676,6 +676,109 @@ def run_auto_tune():
         }), 500
 
 
+@app.route('/api/fast_research/save-context-data', methods=['POST'])
+def save_fast_research_context_data():
+    """Save data for a specific context from fast research results"""
+    try:
+        data = request.get_json()
+        config_path = data.get('config_path')
+        data_file = data.get('data_file')
+        context_hash = data.get('context_hash')
+        context_fields = data.get('context_fields', [])
+        
+        if not config_path or not data_file or not context_hash:
+            return jsonify({
+                'success': False,
+                'error': 'config_path, data_file, and context_hash are required'
+            }), 400
+        
+        # Resolve paths
+        if not os.path.isabs(config_path):
+            config_path = os.path.join(PROJECT_ROOT, config_path)
+        
+        if not os.path.isabs(data_file):
+            data_file = os.path.join(PROJECT_ROOT, data_file)
+        
+        # Security checks
+        try:
+            config_path = os.path.abspath(config_path)
+            data_file = os.path.abspath(data_file)
+            project_root_abs = os.path.abspath(PROJECT_ROOT)
+            
+            if not config_path.startswith(project_root_abs) or not data_file.startswith(project_root_abs):
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid path'
+                }), 400
+        except Exception:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid path'
+            }), 400
+        
+        # Load config and data
+        from mass.core.fast_research import FastResearchRunner
+        runner = FastResearchRunner(config_path, data_file=data_file)
+        df = runner.load_data()
+        
+        if df.empty:
+            return jsonify({
+                'success': False,
+                'error': 'No data loaded'
+            }), 400
+        
+        # Filter data by context
+        context_fields_from_config = runner.config.get('context_fields', [])
+        if context_fields:
+            # Use provided context_fields (for more precise filtering)
+            filter_fields = context_fields
+        else:
+            filter_fields = context_fields_from_config
+        
+        # Calculate context hash for each row and filter
+        filtered_df = df[df.apply(
+            lambda row: runner._get_context_hash(row, filter_fields) == context_hash,
+            axis=1
+        )]
+        
+        if filtered_df.empty:
+            return jsonify({
+                'success': False,
+                'error': 'No data found for this context'
+            }), 404
+        
+        # Generate filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # Clean context_hash for filename (remove special characters)
+        safe_context_hash = context_hash.replace('/', '_').replace('\\', '_')[:50]
+        filename = f'fast_research_context_{safe_context_hash}_{timestamp}.csv'
+        saved_data_dir = PROJECT_ROOT / 'saved_data'
+        saved_data_dir.mkdir(parents=True, exist_ok=True)
+        file_path = saved_data_dir / filename
+        
+        # Save to CSV
+        filtered_df.to_csv(file_path, index=False, encoding='utf-8')
+        
+        # Return relative path
+        relative_path = str(file_path.relative_to(PROJECT_ROOT))
+        
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'path': relative_path,
+            'rows': len(filtered_df),
+            'message': f'Data saved: {len(filtered_df)} rows'
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/fast_research', methods=['POST'])
 def run_fast_research():
     """Run fast research with anomaly detection tools"""
