@@ -13,6 +13,9 @@ python-dateutil>=2.8.0
 # Note: Requires Python < 3.14 (numba dependency)
 adtk>=0.6.0
 pyod>=1.0.0
+alibi-detect>=0.11.0  # For fast research mode
+dtaianomaly>=0.1.0  # For fast research mode (time series anomaly detection)
+scikit-learn>=1.0.0  # For fast research mode (IsolationForest)
 prophet>=1.1.0
 plotly>=5.0.0  # Required by prophet for interactive plots (optional but recommended)
 

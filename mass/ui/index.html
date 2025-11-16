@@ -6,6 +6,8 @@
     <title>MASS - Metric Analytic Super System</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <!-- Plotly.js for interactive graphs (latest stable version) -->
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -329,6 +331,10 @@
                 <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; background: rgba(255,255,255,0.2); padding: 5px 12px; border-radius: 5px; font-size: 13px;">
                     <input type="radio" name="mode" value="auto_tune" onchange="switchMode(this.value)" style="width: auto;">
                     <span>🤖 Auto-Tune</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; background: rgba(255,255,255,0.2); padding: 5px 12px; border-radius: 5px; font-size: 13px;">
+                    <input type="radio" name="mode" value="fast_research" onchange="switchMode(this.value)" style="width: auto;">
+                    <span>⚡ Fast Research</span>
                 </label>
             </div>
             
@@ -888,6 +894,40 @@
                     <div id="autoTuneResultsContent" style="margin-top: 20px;"></div>
                 </div>
             </div>
+            
+            <!-- Fast Research Section -->
+            <div id="fastResearchSection" class="form-section" style="display: none; grid-column: 1 / -1;">
+                <div class="section-title">⚡ Fast Research - Быстрая проверка инструментов обнаружения аномалий</div>
+                <p style="color: #666; margin-bottom: 20px; line-height: 1.6;">
+                    В этом режиме вы можете быстро протестировать инструменты из коробки: PyOD, alibi-detect, dtaianomaly, sklearn.
+                    Для каждого контекста будет показан график с результатами работы всех инструментов.
+                </p>
+                
+                <div class="form-group">
+                    <label>Конфиг</label>
+                    <select id="fastResearchConfig" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                        <option value="">Выберите конфиг...</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Сохраненные данные</label>
+                    <select id="fastResearchDataFile" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                        <option value="">Выберите файл данных...</option>
+                    </select>
+                </div>
+                
+                <button type="button" class="btn-generate" onclick="runFastResearch()" id="runFastResearchBtn" style="margin-top: 20px;" disabled>
+                    🔍 Исследовать
+                </button>
+                
+                <div id="fastResearchStatus" style="display: none; margin-top: 20px; padding: 15px; border-radius: 6px;"></div>
+                
+                <div id="fastResearchResults" style="margin-top: 30px; display: none;">
+                    <div class="section-title">📊 Результаты исследований</div>
+                    <div id="fastResearchResultsContent" style="margin-top: 20px;"></div>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -896,13 +936,13 @@
         let currentMode = 'generate';
         
         // Определяем switchMode в глобальной области видимости
-        window.switchMode = function(mode) {
+        function switchMode(mode) {
             currentMode = mode;
             const fileLoader = document.getElementById('fileLoader');
             const formSection = document.querySelector('.form-section');
             const previewSection = document.querySelector('.preview-section');
             
-            if (mode === 'edit' || mode === 'explore' || mode === 'auto_tune') {
+            if (mode === 'edit' || mode === 'explore' || mode === 'auto_tune' || mode === 'fast_research') {
                 fileLoader.style.display = 'block';
                 // Load list of configs from configs/ directory
                 loadConfigsList();
@@ -916,10 +956,12 @@
             // Show/hide explore UI
             const exploreSection = document.getElementById('exploreSection');
             const autoTuneSection = document.getElementById('autoTuneSection');
+            const fastResearchSection = document.getElementById('fastResearchSection');
             
             if (mode === 'explore') {
                 if (exploreSection) exploreSection.style.display = 'block';
                 if (autoTuneSection) autoTuneSection.style.display = 'none';
+                if (fastResearchSection) fastResearchSection.style.display = 'none';
                 if (formSection) formSection.style.display = 'none';
                 if (previewSection) previewSection.style.display = 'none';
                 // Load saved data list when entering explore mode
@@ -927,23 +969,32 @@
             } else if (mode === 'auto_tune') {
                 if (exploreSection) exploreSection.style.display = 'none';
                 if (autoTuneSection) autoTuneSection.style.display = 'block';
+                if (fastResearchSection) fastResearchSection.style.display = 'none';
                 if (formSection) formSection.style.display = 'none';
                 if (previewSection) previewSection.style.display = 'none';
                 // Load saved data list and configs list for auto-tune
                 loadSavedDataList();
                 loadAutoTuneConfigsList();
+            } else if (mode === 'fast_research') {
+                if (exploreSection) exploreSection.style.display = 'none';
+                if (autoTuneSection) autoTuneSection.style.display = 'none';
+                if (fastResearchSection) fastResearchSection.style.display = 'block';
+                if (formSection) formSection.style.display = 'none';
+                if (previewSection) previewSection.style.display = 'none';
+                // Load saved data list and configs list for fast research
+                loadSavedDataList();
+                loadFastResearchConfigsList();
             } else {
                 if (exploreSection) exploreSection.style.display = 'none';
                 if (autoTuneSection) autoTuneSection.style.display = 'none';
+                if (fastResearchSection) fastResearchSection.style.display = 'none';
                 if (formSection) formSection.style.display = 'block';
                 if (previewSection) previewSection.style.display = 'block';
             }
-        };
-        
-        // Также определяем как обычную функцию для обратной совместимости
-        function switchMode(mode) {
-            return window.switchMode(mode);
         }
+        
+        // Также делаем доступной через window для надежности
+        window.switchMode = switchMode;
         
         function loadConfigsList() {
             // Load list of available configs from API
@@ -953,6 +1004,7 @@
                     const select = document.getElementById('configsSelect');
                     const exploreSelect = document.getElementById('exploreBaseConfig');
                     const autoTuneSelect = document.getElementById('autoTuneBaseConfig');
+                    const fastResearchSelect = document.getElementById('fastResearchConfig');
                     
                     // Clear existing options except the first one
                     const defaultOption = '<option value="">Выберите конфиг из configs/...</option>';
@@ -965,6 +1017,9 @@
                     if (autoTuneSelect) {
                         autoTuneSelect.innerHTML = '<option value="">Выберите конфиг...</option>';
                     }
+                    if (fastResearchSelect) {
+                        fastResearchSelect.innerHTML = '<option value="">Выберите конфиг...</option>';
+                    }
                     
                     // Add configs to all selects
                     if (data.configs && data.configs.length > 0) {
@@ -975,6 +1030,7 @@
                             if (select) select.appendChild(option.cloneNode(true));
                             if (exploreSelect) exploreSelect.appendChild(option.cloneNode(true));
                             if (autoTuneSelect) autoTuneSelect.appendChild(option.cloneNode(true));
+                            if (fastResearchSelect) fastResearchSelect.appendChild(option.cloneNode(true));
                         });
                     } else {
                         const option = document.createElement('option');
@@ -984,6 +1040,7 @@
                         if (select) select.appendChild(option.cloneNode(true));
                         if (exploreSelect) exploreSelect.appendChild(option.cloneNode(true));
                         if (autoTuneSelect) autoTuneSelect.appendChild(option.cloneNode(true));
+                        if (fastResearchSelect) fastResearchSelect.appendChild(option.cloneNode(true));
                     }
                 })
                 .catch(error => {
@@ -991,9 +1048,11 @@
                     const select = document.getElementById('configsSelect');
                     const exploreSelect = document.getElementById('exploreBaseConfig');
                     const autoTuneSelect = document.getElementById('autoTuneBaseConfig');
+                    const fastResearchSelect = document.getElementById('fastResearchConfig');
                     if (select) select.innerHTML = '<option value="">Ошибка загрузки списка</option>';
                     if (exploreSelect) exploreSelect.innerHTML = '<option value="">Ошибка загрузки списка</option>';
                     if (autoTuneSelect) autoTuneSelect.innerHTML = '<option value="">Ошибка загрузки списка</option>';
+                    if (fastResearchSelect) fastResearchSelect.innerHTML = '<option value="">Ошибка загрузки списка</option>';
                 });
         }
         
@@ -1003,6 +1062,7 @@
             const select = document.getElementById('savedDataSelect');
             const exploreDataSelect = document.getElementById('exploreDataFile');
             const autoTuneDataSelect = document.getElementById('autoTuneDataFile');
+            const fastResearchDataSelect = document.getElementById('fastResearchDataFile');
             const loadBtn = document.getElementById('loadDataBtn');
             
             try {
@@ -1020,6 +1080,9 @@
                 if (autoTuneDataSelect) {
                     autoTuneDataSelect.innerHTML = defaultOption;
                 }
+                if (fastResearchDataSelect) {
+                    fastResearchDataSelect.innerHTML = '<option value="">Выберите файл данных...</option>';
+                }
                 
                 if (data.success && data.files && data.files.length > 0) {
                     data.files.forEach(file => {
@@ -1031,6 +1094,7 @@
                         if (select) select.appendChild(option.cloneNode(true));
                         if (exploreDataSelect) exploreDataSelect.appendChild(option.cloneNode(true));
                         if (autoTuneDataSelect) autoTuneDataSelect.appendChild(option.cloneNode(true));
+                        if (fastResearchDataSelect) fastResearchDataSelect.appendChild(option.cloneNode(true));
                     });
                 } else {
                     const option = document.createElement('option');
@@ -1782,6 +1846,544 @@
                 });
             }
         }
+        
+        function loadFastResearchConfigsList() {
+            // Загружаем список конфигов для fast research
+            loadConfigsList();
+            
+            // Также загружаем список сохраненных данных
+            loadSavedDataList();
+            
+            // Обновляем селекты
+            const configSelect = document.getElementById('fastResearchConfig');
+            const dataFileSelect = document.getElementById('fastResearchDataFile');
+            const runBtn = document.getElementById('runFastResearchBtn');
+            
+            // Функция для проверки, можно ли запустить исследование
+            function updateRunButton() {
+                if (configSelect && configSelect.value && dataFileSelect && dataFileSelect.value) {
+                    runBtn.disabled = false;
+                } else {
+                    runBtn.disabled = true;
+                }
+            }
+            
+            // Обновляем кнопку запуска
+            updateRunButton();
+            
+            // Слушаем изменения в селектах
+            if (configSelect) {
+                configSelect.addEventListener('change', updateRunButton);
+            }
+            if (dataFileSelect) {
+                dataFileSelect.addEventListener('change', updateRunButton);
+            }
+        }
+        
+        async function runFastResearch() {
+            const configSelect = document.getElementById('fastResearchConfig');
+            const dataSelect = document.getElementById('fastResearchDataFile');
+            const statusDiv = document.getElementById('fastResearchStatus');
+            const resultsDiv = document.getElementById('fastResearchResults');
+            const resultsContent = document.getElementById('fastResearchResultsContent');
+            const runBtn = document.getElementById('runFastResearchBtn');
+            
+            if (!configSelect.value || !dataSelect.value) {
+                alert('Выберите конфиг и файл данных');
+                return;
+            }
+            
+            statusDiv.style.display = 'block';
+            statusDiv.style.background = '#d1ecf1';
+            statusDiv.style.color = '#0c5460';
+            statusDiv.innerHTML = '<strong>⏳ Запуск исследования...</strong><br>Анализ данных с помощью инструментов...';
+            runBtn.disabled = true;
+            resultsDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/fast_research', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        config_path: configSelect.value,
+                        data_file: dataSelect.value
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusDiv.style.background = '#d4edda';
+                    statusDiv.style.color = '#155724';
+                    statusDiv.innerHTML = '<strong>✅ Исследование завершено!</strong>';
+                    
+                    // Save config and data file paths for later use (e.g., saving context data)
+                    window.fastResearchConfigPath = configSelect.value;
+                    window.fastResearchDataFile = dataSelect.value;
+                    window.fastResearchResults = data.results;
+                    
+                    displayFastResearchResults(data.results);
+                    resultsDiv.style.display = 'block';
+                } else {
+                    statusDiv.style.background = '#f8d7da';
+                    statusDiv.style.color = '#721c24';
+                    statusDiv.innerHTML = `<strong>❌ Ошибка:</strong><br>${data.error || 'Неизвестная ошибка'}`;
+                }
+            } catch (error) {
+                statusDiv.style.background = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                let errorMsg = error.message || String(error);
+                if (error.name === 'AbortError') {
+                    errorMsg = 'Превышено время ожидания ответа от сервера.';
+                } else if (error.message && error.message.includes('Failed to fetch')) {
+                    errorMsg = 'Не удалось подключиться к серверу. Проверьте логи сервера.';
+                }
+                statusDiv.innerHTML = `<strong>❌ Ошибка:</strong><br><pre style="margin-top: 10px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${errorMsg}</pre>`;
+                console.error('Fast Research error:', error);
+            } finally {
+                runBtn.disabled = false;
+            }
+        }
+        
+        function displayFastResearchResults(results) {
+            const resultsContent = document.getElementById('fastResearchResultsContent');
+            
+            if (!results || !results.contexts || results.contexts.length === 0) {
+                resultsContent.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">Нет результатов для отображения</p>';
+                return;
+            }
+            
+            let html = '';
+            
+            // Общая статистика
+            let totalMetrics = 0;
+            let totalIntervals = {};
+            results.contexts.forEach(ctx => {
+                ctx.metrics.forEach(metric => {
+                    totalMetrics++;
+                    Object.entries(metric.tool_results || {}).forEach(([tool, intervals]) => {
+                        if (!totalIntervals[tool]) totalIntervals[tool] = { count: 0, points: 0 };
+                        // Check if intervals is array of tuples (new format) or array of 0/1 (old format)
+                        if (Array.isArray(intervals) && intervals.length > 0 && Array.isArray(intervals[0])) {
+                            // New format: list of [start_idx, end_idx] tuples
+                            totalIntervals[tool].count += intervals.length;
+                            totalIntervals[tool].points += intervals.reduce((sum, [start, end]) => sum + (end - start + 1), 0);
+                        } else if (Array.isArray(intervals)) {
+                            // Old format: array of 0/1
+                            totalIntervals[tool].count += intervals.filter(p => p === 1).length;
+                            totalIntervals[tool].points += intervals.filter(p => p === 1).length;
+                        }
+                    });
+                });
+            });
+            
+            html += '<div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+            html += '<h3 style="margin: 0 0 15px 0; color: #333;">📊 Общая статистика</h3>';
+            html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">';
+            html += `<div style="padding: 15px; background: #e8f5e9; border-radius: 6px;"><strong>Контекстов проанализировано:</strong><br><span style="font-size: 24px; color: #4CAF50;">${results.contexts.length}</span></div>`;
+            html += `<div style="padding: 15px; background: #e3f2fd; border-radius: 6px;"><strong>Метрик проанализировано:</strong><br><span style="font-size: 24px; color: #2196F3;">${totalMetrics}</span></div>`;
+            html += `<div style="padding: 15px; background: #fff3e0; border-radius: 6px;"><strong>Инструментов использовано:</strong><br><span style="font-size: 24px; color: #FF9800;">${Object.keys(totalIntervals).length}</span></div>`;
+            html += '</div></div>';
+            
+            // Статистика по инструментам
+            if (Object.keys(totalIntervals).length > 0) {
+                html += '<div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+                html += '<h3 style="margin: 0 0 15px 0; color: #333;">🔧 Статистика по инструментам</h3>';
+                html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">';
+                Object.entries(totalIntervals).forEach(([tool, stats]) => {
+                    html += `<div style="padding: 15px; background: #f5f5f5; border-radius: 6px; border-left: 4px solid #667eea;">`;
+                    html += `<strong style="color: #333; font-size: 16px;">${tool}</strong><br>`;
+                    html += `<span style="font-size: 20px; color: #667eea; font-weight: 600;">${stats.count}</span> <span style="color: #666; font-size: 14px;">интервалов изменений тренда</span><br>`;
+                    html += `<span style="color: #999; font-size: 12px;">${stats.points} точек всего</span>`;
+                    html += `</div>`;
+                });
+                html += '</div></div>';
+            }
+            
+            // Результаты по контекстам
+            html += '<div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">';
+            html += '<h3 style="margin: 0 0 20px 0; color: #333;">📈 Результаты по контекстам</h3>';
+            
+            results.contexts.forEach((context, idx) => {
+                const contextDisplay = context.context_display || `Контекст ${idx + 1}`;
+                html += `<div style="margin-bottom: 30px; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background: #f9f9f9;">`;
+                html += `<h4 style="margin: 0 0 15px 0; color: #667eea; font-size: 18px;">${contextDisplay}</h4>`;
+                
+                // Показываем статистику по метрикам этого контекста
+                if (context.metrics && context.metrics.length > 0) {
+                    html += '<div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 6px;">';
+                    html += '<div style="font-size: 14px; color: #666; margin-bottom: 8px;"><strong>Метрики:</strong></div>';
+                    context.metrics.forEach(metric => {
+                        const metricName = metric.metric_name || 'unknown';
+                        const dataPoints = metric.values ? metric.values.length : 0;
+                        html += `<div style="margin-bottom: 8px; padding: 8px; background: #f8f9fa; border-radius: 4px;">`;
+                        html += `<strong>${metricName}</strong>: ${dataPoints} точек`;
+                        if (metric.tool_results) {
+                            html += ` <span style="color: #666; font-size: 12px;">| `;
+                            const toolStats = [];
+                            Object.entries(metric.tool_results).forEach(([tool, intervals]) => {
+                                // Check if intervals is array of tuples (new format) or array of 0/1 (old format)
+                                if (Array.isArray(intervals) && intervals.length > 0 && Array.isArray(intervals[0])) {
+                                    // New format: list of [start_idx, end_idx] tuples
+                                    const intervalCount = intervals.length;
+                                    const totalPoints = intervals.reduce((sum, [start, end]) => sum + (end - start + 1), 0);
+                                    toolStats.push(`${tool}: ${intervalCount} интервалов (${totalPoints} точек)`);
+                                } else if (Array.isArray(intervals)) {
+                                    // Old format: array of 0/1
+                                    const anomalies = intervals.filter(p => p === 1).length;
+                                    toolStats.push(`${tool}: ${anomalies} аномалий`);
+                                }
+                            });
+                            html += toolStats.join(', ');
+                            html += `</span>`;
+                        }
+                        html += `</div>`;
+                    });
+                    html += '</div>';
+                }
+                
+                // График для этого контекста
+                if (context.graph_html) {
+                    html += `<div style="margin-top: 15px;">${context.graph_html}</div>`;
+                } else if (context.graph_json) {
+                    // Если есть JSON данные для графика, создаем контейнер
+                    html += `<div style="margin-top: 15px; padding: 10px; background: white; border-radius: 6px;">`;
+                    html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">`;
+                    html += `<div style="font-size: 14px; color: #666;"><strong>График результатов:</strong></div>`;
+                    html += `<div style="display: flex; gap: 8px; align-items: center;">`;
+                    html += `<button onclick="saveContextData(${idx})" id="saveContextDataBtn_${idx}" style="padding: 6px 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 5px;">`;
+                    html += `<span>💾</span> <span>Сохранить данные</span>`;
+                    html += `</button>`;
+                    html += `<button onclick="openGraphFullscreen(${idx})" style="padding: 6px 12px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 5px;">`;
+                    html += `<span>🔍</span> <span>Полный экран</span>`;
+                    html += `</button>`;
+                    html += `</div>`;
+                    html += `</div>`;
+                    html += `<div id="fastResearchGraph_${idx}" style="width: 100%; height: 600px; border: 1px solid #e0e0e0; border-radius: 4px; background: white;"></div>`;
+                    html += `<div id="fastResearchGraphLoading_${idx}" style="margin-top: 10px; font-size: 12px; color: #999; text-align: center;">Загрузка графика...</div>`;
+                    html += `</div>`;
+                } else {
+                    html += `<div style="margin-top: 15px; padding: 15px; background: #fff3cd; border-radius: 6px; color: #856404;">`;
+                    html += `⚠️ График не сгенерирован для этого контекста`;
+                    html += `</div>`;
+                }
+                
+                html += `</div>`;
+            });
+            
+            html += '</div>';
+            
+            resultsContent.innerHTML = html;
+            
+            // Используем setTimeout чтобы убедиться, что DOM обновлен перед рендерингом графиков
+            setTimeout(() => {
+                // Проверяем, загружен ли Plotly
+                if (typeof Plotly === 'undefined') {
+                    console.error('❌ Plotly is not loaded! Cannot render graphs.');
+                    // Show message if Plotly is not available
+                    results.contexts.forEach((context, idx) => {
+                        if (context.graph_json) {
+                            const graphDiv = document.getElementById(`fastResearchGraph_${idx}`);
+                            if (graphDiv) {
+                                const parentDiv = graphDiv.parentElement;
+                                if (parentDiv) {
+                                    parentDiv.innerHTML = `<div style="padding: 20px; text-align: center; color: #d32f2f; border: 2px dashed #d32f2f; border-radius: 6px;">
+                                        <p style="font-size: 16px; margin-bottom: 10px;">⚠️ Plotly.js не загружен</p>
+                                        <p style="font-size: 12px; margin-bottom: 5px;">Графики не могут быть отображены без Plotly.js</p>
+                                        <p style="font-size: 11px; color: #999;">Проверьте подключение к интернету и обновите страницу</p>
+                                    </div>`;
+                                }
+                            }
+                        }
+                    });
+                    return;
+                }
+                
+                console.log('✅ Plotly is loaded, version:', typeof Plotly !== 'undefined' ? 'available' : 'not available');
+                
+                // Если есть JSON данные для графиков, рендерим их с помощью Plotly
+                results.contexts.forEach((context, idx) => {
+                    if (context.graph_json) {
+                        const graphDiv = document.getElementById(`fastResearchGraph_${idx}`);
+                        if (!graphDiv) {
+                            console.error(`❌ Graph div fastResearchGraph_${idx} not found in DOM`);
+                            return;
+                        }
+                        
+                        try {
+                            // Plotly expects data and layout separately
+                            const graphData = context.graph_json.data || [];
+                            const graphLayout = context.graph_json.layout || {};
+                            
+                            if (!graphData || graphData.length === 0) {
+                                console.warn(`⚠️ No data for graph ${idx}`);
+                                graphDiv.innerHTML = `<div style="padding: 20px; text-align: center; color: #856404; background: #fff3cd; border-radius: 6px;">
+                                    <p>⚠️ Нет данных для графика</p>
+                                </div>`;
+                                return;
+                            }
+                            
+                            console.log(`📊 Rendering graph ${idx}:`, {
+                                traces: graphData.length,
+                                layout: graphLayout.title || 'No title',
+                                context: context.context_display
+                            });
+                            
+                            // Render plot
+                            Plotly.newPlot(graphDiv, graphData, graphLayout, {
+                                responsive: true,
+                                displayModeBar: true,
+                                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                                displaylogo: false,
+                                toImageButtonOptions: {
+                                    format: 'png',
+                                    filename: `fast_research_${idx}`,
+                                    height: 600,
+                                    width: 1200,
+                                    scale: 1
+                                }
+                            });
+                            
+                            console.log(`✅ Graph ${idx} rendered successfully`);
+                            
+                            // Убираем сообщение "Загрузка графика..." после успешного рендеринга
+                            const loadingMsg = document.getElementById(`fastResearchGraphLoading_${idx}`);
+                            if (loadingMsg) {
+                                loadingMsg.style.display = 'none';
+                            }
+                            
+                        } catch (error) {
+                            console.error(`❌ Error rendering graph ${idx}:`, error);
+                            console.error('Error details:', {
+                                error: error.message,
+                                stack: error.stack,
+                                graphData: context.graph_json.data ? context.graph_json.data.length : 0,
+                                graphLayout: context.graph_json.layout ? 'exists' : 'missing'
+                            });
+                            
+                            const parentDiv = graphDiv.parentElement;
+                            if (parentDiv) {
+                                parentDiv.innerHTML = `<div style="padding: 20px; text-align: center; color: #d32f2f; border: 2px dashed #d32f2f; border-radius: 6px;">
+                                    <p style="font-size: 16px; margin-bottom: 10px;">❌ Ошибка при отображении графика</p>
+                                    <p style="font-size: 12px; margin-bottom: 10px;">${error.message}</p>
+                                    <details style="margin-top: 10px; text-align: left;">
+                                        <summary style="cursor: pointer; color: #666; font-size: 11px;">Детали ошибки</summary>
+                                        <pre style="font-size: 10px; background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 5px; overflow-x: auto;">${error.stack || error.message}</pre>
+                                    </details>
+                                </div>`;
+                            }
+                        }
+                    } else {
+                        console.warn(`⚠️ No graph_json for context ${idx} (${context.context_display})`);
+                    }
+                });
+            }, 200); // Увеличиваем задержку для надежности
+        }
+        
+        // Function to open graph in fullscreen modal
+        function openGraphFullscreen(graphIdx) {
+            const graphDiv = document.getElementById(`fastResearchGraph_${graphIdx}`);
+            if (!graphDiv) {
+                console.error(`Graph div fastResearchGraph_${graphIdx} not found`);
+                return;
+            }
+            
+            // Get the graph data from the rendered Plotly graph
+            const graphData = graphDiv.data;
+            const graphLayout = graphDiv.layout;
+            
+            if (!graphData || !graphLayout) {
+                console.error('Graph data not found');
+                return;
+            }
+            
+            // Create modal overlay
+            const modal = document.createElement('div');
+            modal.id = `graphModal_${graphIdx}`;
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.9);
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+                box-sizing: border-box;
+            `;
+            
+            // Create modal content
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                position: relative;
+                width: 95%;
+                height: 95%;
+                background: white;
+                border-radius: 8px;
+                padding: 20px;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+            `;
+            
+            // Create header with close button
+            const modalHeader = document.createElement('div');
+            modalHeader.style.cssText = `
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 15px;
+                padding-bottom: 10px;
+                border-bottom: 1px solid #e0e0e0;
+            `;
+            
+            const modalTitle = document.createElement('h3');
+            modalTitle.textContent = 'График результатов (полный экран)';
+            modalTitle.style.cssText = 'margin: 0; color: #333; font-size: 18px;';
+            
+            const closeButton = document.createElement('button');
+            closeButton.textContent = '✕ Закрыть';
+            closeButton.style.cssText = `
+                padding: 8px 16px;
+                background: #f44336;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+            `;
+            closeButton.onclick = () => {
+                document.body.removeChild(modal);
+            };
+            
+            // Create graph container in modal
+            const modalGraphDiv = document.createElement('div');
+            modalGraphDiv.id = `modalGraph_${graphIdx}`;
+            modalGraphDiv.style.cssText = `
+                flex: 1;
+                width: 100%;
+                min-height: 0;
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                background: white;
+            `;
+            
+            // Assemble modal
+            modalHeader.appendChild(modalTitle);
+            modalHeader.appendChild(closeButton);
+            modalContent.appendChild(modalHeader);
+            modalContent.appendChild(modalGraphDiv);
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // Close on Escape key
+            const handleEscape = (e) => {
+                if (e.key === 'Escape') {
+                    if (document.body.contains(modal)) {
+                        document.body.removeChild(modal);
+                    }
+                    document.removeEventListener('keydown', handleEscape);
+                }
+            };
+            document.addEventListener('keydown', handleEscape);
+            
+            // Render graph in modal
+            Plotly.newPlot(modalGraphDiv.id, graphData, graphLayout, {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                displaylogo: false,
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: `fast_research_fullscreen_${graphIdx}`,
+                    height: 800,
+                    width: 1600,
+                    scale: 1
+                }
+            });
+            
+            // Resize graph to fit modal
+            setTimeout(() => {
+                Plotly.Plots.resize(modalGraphDiv);
+            }, 100);
+        }
+        
+        // Make function globally accessible
+        window.openGraphFullscreen = openGraphFullscreen;
+        
+        // Function to save context data
+        async function saveContextData(contextIdx) {
+            // Get saved config and data file from fast research results
+            const fastResearchConfigPath = window.fastResearchConfigPath;
+            const fastResearchDataFile = window.fastResearchDataFile;
+            const fastResearchResults = window.fastResearchResults;
+            
+            if (!fastResearchResults || !fastResearchResults.contexts || !fastResearchResults.contexts[contextIdx]) {
+                alert('❌ Ошибка: данные контекста не найдены');
+                return;
+            }
+            
+            const context = fastResearchResults.contexts[contextIdx];
+            const contextHash = context.context_hash;
+            
+            if (!contextHash) {
+                alert('❌ Ошибка: не найден hash контекста');
+                return;
+            }
+            
+            if (!fastResearchConfigPath || !fastResearchDataFile) {
+                alert('❌ Ошибка: не найдены пути к конфигу или данным');
+                return;
+            }
+            
+            const saveBtn = document.getElementById(`saveContextDataBtn_${contextIdx}`);
+            const originalText = saveBtn ? saveBtn.innerHTML : '';
+            
+            try {
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '<span>⏳</span> <span>Сохранение...</span>';
+                }
+                
+                const response = await fetch('/api/fast_research/save-context-data', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        config_path: fastResearchConfigPath,
+                        data_file: fastResearchDataFile,
+                        context_hash: contextHash
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✅ Данные сохранены!\n\nФайл: ${data.filename}\nПуть: ${data.path}\nСтрок: ${data.rows}\n\nВы можете использовать этот файл для повторного анализа.`);
+                    // Optionally reload saved data list
+                    if (typeof loadSavedDataList === 'function') {
+                        loadSavedDataList();
+                    }
+                } else {
+                    alert(`❌ Ошибка при сохранении: ${data.error || 'Неизвестная ошибка'}`);
+                }
+            } catch (error) {
+                console.error('Error saving context data:', error);
+                alert(`❌ Ошибка при сохранении: ${error.message}`);
+            } finally {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalText;
+                }
+            }
+        }
+        
+        // Make function globally accessible
+        window.saveContextData = saveContextData;
         
         async function runAutoTune() {
             const baseConfigSelect = document.getElementById('autoTuneBaseConfig');

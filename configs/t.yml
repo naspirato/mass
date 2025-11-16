@@ -1,0 +1,51 @@
+analytics:
+    adaptive_threshold: true
+    baseline_method: rolling_mean
+    hysteresis_points: 3
+    min_absolute_change: 50
+    min_data_points: 10
+    min_relative_change: 0.1
+    sensitivity: 2.0
+    window_size: 100
+context_fields:
+  - branch
+data_source:
+  ydb:
+    query: |
+      SELECT
+        run_timestamp as ts,
+        branch,
+        duration as metric_value,
+        'duration' as metric_name
+      FROM `test_results/analytics/test_history_fast`
+      WHERE branch = 'stable-25-3'
+        AND build_type = 'relwithdebinfo'
+        AND full_name = 'ydb/tests/olap/scenario/test_alter_compression.py.TestAlterCompression.test[alter_compression]'
+        AND job_name != 'PR-check'
+      ORDER BY run_timestamp DESC, build_type, branch, full_name, job_name, test_id
+      LIMIT 1000
+events:
+  detect:
+  - degradation_start
+  - improvement_start
+  min_event_duration_minutes: 30
+job:
+  description: Анализ производительности теста TestAlterCompression (duration_ms по branch)
+  name: test_alter_compression_analysis
+metric_direction:
+  default: negative
+metric_fields:
+- metric_name
+- metric_value
+output:
+  dry_run: false
+  log_to_console: true
+  write_to_ydb: true
+runtime:
+  max_runtime_minutes: 30
+  timezone: UTC
+thresholds:
+  keep_history: true
+timestamp_field: ts
+  
+  
