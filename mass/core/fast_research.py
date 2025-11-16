@@ -40,6 +40,15 @@ class FastResearchRunner:
         
         self.data_file = data_file
         self.tools = self._load_tools()
+        
+        # Load metric direction configuration
+        metric_direction_config = self.config.get('metric_direction', {})
+        self.metric_direction_default = metric_direction_config.get('default', 'negative')
+        self.metric_direction_map = {k: v for k, v in metric_direction_config.items() if k != 'default'}
+    
+    def _get_metric_direction(self, metric_name: str) -> str:
+        """Get metric direction (negative or positive)"""
+        return self.metric_direction_map.get(metric_name, self.metric_direction_default)
     
     def _load_tools(self) -> List[Dict[str, Any]]:
         """Load tools from tools.txt file"""
@@ -1070,32 +1079,70 @@ class FastResearchRunner:
                         if len(interval_timestamps) == 0:
                             continue
                         
-                        # Determine trend direction in interval
+                        # Determine trend direction and calculate change magnitude
                         # Compare values at start and end of interval
                         start_value = interval_values[0] if len(interval_values) > 0 else None
                         end_value = interval_values[-1] if len(interval_values) > 0 else None
                         
-                        # If we have enough points, use average of first and last 20% for more robust detection
-                        if len(interval_values) >= 5:
-                            window_size = max(1, len(interval_values) // 5)
-                            start_avg = np.mean(interval_values[:window_size])
-                            end_avg = np.mean(interval_values[-window_size:])
-                            trend_direction = 'positive' if end_avg > start_avg else 'negative'
+                        # Calculate linear trend line for the interval
+                        trend_line_values = None
+                        abs_change = None
+                        rel_change_pct = None
+                        
+                        if len(interval_values) >= 2:
+                            # Calculate linear regression for trend line
+                            x_indices = np.arange(len(interval_values))
+                            slope, intercept = np.polyfit(x_indices, interval_values, 1)
+                            trend_line_values = slope * x_indices + intercept
+                            
+                            # Calculate change: use start and end of trend line for consistency
+                            trend_start = trend_line_values[0]
+                            trend_end = trend_line_values[-1]
+                            
+                            abs_change = trend_end - trend_start
+                            if abs(trend_start) > 1e-6:  # Avoid division by zero
+                                rel_change_pct = (abs_change / abs(trend_start)) * 100
+                            else:
+                                rel_change_pct = 0.0
+                            
+                            # Determine direction based on trend line
+                            if len(interval_values) >= 5:
+                                window_size = max(1, len(interval_values) // 5)
+                                start_avg = np.mean(trend_line_values[:window_size])
+                                end_avg = np.mean(trend_line_values[-window_size:])
+                                trend_direction = 'positive' if end_avg > start_avg else 'negative'
+                            else:
+                                trend_direction = 'positive' if trend_end > trend_start else 'negative'
                         elif start_value is not None and end_value is not None:
+                            abs_change = end_value - start_value
+                            if abs(start_value) > 1e-6:
+                                rel_change_pct = (abs_change / abs(start_value)) * 100
+                            else:
+                                rel_change_pct = 0.0
                             trend_direction = 'positive' if end_value > start_value else 'negative'
                         else:
                             trend_direction = 'neutral'
                         
-                        # Choose color based on trend direction
-                        if trend_direction == 'positive':
-                            # Green for positive trend (growth)
-                            tool_color = '#4CAF50'  # Green
-                        elif trend_direction == 'negative':
-                            # Red for negative trend (decline)
-                            tool_color = '#F44336'  # Red
-                        else:
-                            # Gray for neutral/no clear trend
-                            tool_color = '#9E9E9E'  # Gray
+                        # Get metric direction from config
+                        metric_direction = self._get_metric_direction(metric['metric_name'])
+                        
+                        # Choose color based on trend direction AND metric direction
+                        # For negative metrics (latency, errors): рост = плохо (красный), падение = хорошо (зеленый)
+                        # For positive metrics (throughput, success): рост = хорошо (зеленый), падение = плохо (красный)
+                        if trend_direction == 'neutral':
+                            tool_color = '#9E9E9E'  # Gray for neutral/no clear trend
+                        elif metric_direction == 'negative':
+                            # Negative metric: рост значения = ухудшение (красный), падение = улучшение (зеленый)
+                            if trend_direction == 'positive':
+                                tool_color = '#F44336'  # Red - degradation (value increased)
+                            else:  # trend_direction == 'negative'
+                                tool_color = '#4CAF50'  # Green - improvement (value decreased)
+                        else:  # metric_direction == 'positive'
+                            # Positive metric: рост значения = улучшение (зеленый), падение = ухудшение (красный)
+                            if trend_direction == 'positive':
+                                tool_color = '#4CAF50'  # Green - improvement (value increased)
+                            else:  # trend_direction == 'negative'
+                                tool_color = '#F44336'  # Red - degradation (value decreased)
                         
                         # Convert timestamps to strings
                         interval_timestamps_str = [pd.Timestamp(ts).isoformat() if not isinstance(ts, str) else ts for ts in interval_timestamps]
@@ -1103,7 +1150,9 @@ class FastResearchRunner:
                         # Only show name for first interval of each tool
                         is_first_interval = (interval_idx == 0)
                         trend_label = "рост" if trend_direction == 'positive' else "падение" if trend_direction == 'negative' else "нейтральный"
-                        interval_name = f"{tool_name} ({trend_label})" if is_first_interval else None
+                        # Separate names for zone and trend line so they can be toggled independently
+                        interval_name = f"{tool_name} зона ({trend_label})" if is_first_interval else None
+                        trend_line_name = f"{tool_name} линия тренда" if is_first_interval else None
                         change_points_name = f"{tool_name} (change points)" if is_first_interval else None
                         
                         # Create shaded rectangle for interval
@@ -1123,7 +1172,7 @@ class FastResearchRunner:
                         rect_y = [min_y, max_y, max_y, min_y, min_y]
                         
                         if row is not None:
-                            # Add filled area (rectangle) for interval
+                            # Add filled area (rectangle) for interval - separate legend group
                             fig.add_trace(
                                 go.Scatter(
                                     x=rect_x,
@@ -1135,7 +1184,7 @@ class FastResearchRunner:
                                     opacity=0.15,
                                     line=dict(width=0),
                                     showlegend=(metric_idx == 0 and is_first_interval),
-                                    legendgroup=tool_name,
+                                    legendgroup=f"{tool_name}_zone",  # Separate group for zone
                                     hoverinfo='skip'
                                 ),
                                 row=row, col=col
@@ -1180,8 +1229,68 @@ class FastResearchRunner:
                                 ),
                                 row=row, col=col
                             )
+                            
+                            # Add trend line inside the interval - separate legend group
+                            if trend_line_values is not None and len(trend_line_values) > 0:
+                                fig.add_trace(
+                                    go.Scatter(
+                                        x=interval_timestamps_str,
+                                        y=trend_line_values.tolist(),
+                                        mode='lines',
+                                        name=trend_line_name,
+                                        line=dict(color=tool_color, width=3, dash='solid'),
+                                        showlegend=(metric_idx == 0 and is_first_interval),
+                                        legendgroup=f"{tool_name}_trend",  # Separate group for trend line
+                                        hovertemplate=f'<b>Тренд</b><br>Изменение: %{{y:.2f}}<extra></extra>'
+                                    ),
+                                    row=row, col=col
+                                )
+                                
+                                # Add annotation with change magnitude at the center of interval
+                                if abs_change is not None and rel_change_pct is not None:
+                                    center_idx = len(interval_timestamps_str) // 2
+                                    center_x = interval_timestamps_str[center_idx]
+                                    center_y = trend_line_values[center_idx]
+                                    
+                                    # Get values at start and end of trend
+                                    start_value = trend_line_values[0]
+                                    end_value = trend_line_values[-1]
+                                    
+                                    # Format change text - show start -> end values
+                                    abs_change_str = f"{abs_change:+.2f}" if abs_change != 0 else "0.00"
+                                    rel_change_str = f"{rel_change_pct:+.1f}%" if rel_change_pct != 0 else "0.0%"
+                                    start_value_str = f"{start_value:.2f}"
+                                    end_value_str = f"{end_value:.2f}"
+                                    change_text = f"{start_value_str} → {end_value_str}<br>{abs_change_str}<br>({rel_change_str})"
+                                    
+                                    # Add annotation as scatter point with text
+                                    fig.add_trace(
+                                        go.Scatter(
+                                            x=[center_x],
+                                            y=[center_y],
+                                            mode='markers+text',
+                                            marker=dict(
+                                                color=tool_color,
+                                                size=12,
+                                                symbol='circle',
+                                                line=dict(width=2, color='white')
+                                            ),
+                                            text=[change_text],
+                                            textposition="middle right",
+                                            textfont=dict(
+                                                color=tool_color,
+                                                size=11,
+                                                family="Arial Black"
+                                            ),
+                                            name=None,
+                                            showlegend=False,
+                                            hoverinfo='text',
+                                            hovertemplate=f'<b>Информация о тренде</b><br>Начало: {start_value_str}<br>Конец: {end_value_str}<br>Абсолютное изменение: {abs_change_str}<br>Относительное изменение: {rel_change_str}<extra></extra>'
+                                        ),
+                                        row=row, col=col
+                                    )
                         else:
-                            # Add filled area (rectangle) for interval
+                            # Add filled area (rectangle) for interval - separate legend group
                             fig.add_trace(
                                 go.Scatter(
                                     x=rect_x,
@@ -1193,7 +1302,7 @@ class FastResearchRunner:
                                     opacity=0.15,
                                     line=dict(width=0),
                                     showlegend=(metric_idx == 0 and is_first_interval),
-                                    legendgroup=tool_name,
+                                    legendgroup=f"{tool_name}_zone",  # Separate group for zone
                                     hoverinfo='skip'
                                 )
                             )
@@ -1235,6 +1344,64 @@ class FastResearchRunner:
                                     legendgroup=tool_name
                                 )
                             )
+                            
+                            # Add trend line inside the interval (for single graph case) - separate legend group
+                            if trend_line_values is not None and len(trend_line_values) > 0:
+                                fig.add_trace(
+                                    go.Scatter(
+                                        x=interval_timestamps_str,
+                                        y=trend_line_values.tolist(),
+                                        mode='lines',
+                                        name=trend_line_name,
+                                        line=dict(color=tool_color, width=3, dash='solid'),
+                                        showlegend=(metric_idx == 0 and is_first_interval),
+                                        legendgroup=f"{tool_name}_trend",  # Separate group for trend line
+                                        hovertemplate=f'<b>Тренд</b><br>Изменение: %{{y:.2f}}<extra></extra>'
+                                    )
+                                )
+                                
+                                # Add annotation with change magnitude at the center of interval
+                                if abs_change is not None and rel_change_pct is not None:
+                                    center_idx = len(interval_timestamps_str) // 2
+                                    center_x = interval_timestamps_str[center_idx]
+                                    center_y = trend_line_values[center_idx]
+                                    
+                                    # Get values at start and end of trend
+                                    start_value = trend_line_values[0]
+                                    end_value = trend_line_values[-1]
+                                    
+                                    # Format change text - show start -> end values
+                                    abs_change_str = f"{abs_change:+.2f}" if abs_change != 0 else "0.00"
+                                    rel_change_str = f"{rel_change_pct:+.1f}%" if rel_change_pct != 0 else "0.0%"
+                                    start_value_str = f"{start_value:.2f}"
+                                    end_value_str = f"{end_value:.2f}"
+                                    change_text = f"{start_value_str} → {end_value_str}<br>{abs_change_str}<br>({rel_change_str})"
+                                    
+                                    # Add annotation as scatter point with text
+                                    fig.add_trace(
+                                        go.Scatter(
+                                            x=[center_x],
+                                            y=[center_y],
+                                            mode='markers+text',
+                                            marker=dict(
+                                                color=tool_color,
+                                                size=12,
+                                                symbol='circle',
+                                                line=dict(width=2, color='white')
+                                            ),
+                                            text=[change_text],
+                                            textposition="middle right",
+                                            textfont=dict(
+                                                color=tool_color,
+                                                size=11,
+                                                family="Arial Black"
+                                            ),
+                                            name=None,
+                                            showlegend=False,
+                                            hoverinfo='text',
+                                            hovertemplate=f'<b>Информация о тренде</b><br>Начало: {start_value_str}<br>Конец: {end_value_str}<br>Абсолютное изменение: {abs_change_str}<br>Относительное изменение: {rel_change_str}<extra></extra>'
+                                        )
+                                    )
                 else:
                     # Old format: array of 0/1 (fallback for compatibility)
                     if len(intervals) != len(values):

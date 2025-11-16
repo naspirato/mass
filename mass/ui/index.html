@@ -2042,7 +2042,12 @@
                 } else if (context.graph_json) {
                     // Если есть JSON данные для графика, создаем контейнер
                     html += `<div style="margin-top: 15px; padding: 10px; background: white; border-radius: 6px;">`;
-                    html += `<div style="font-size: 14px; color: #666; margin-bottom: 10px;"><strong>График результатов:</strong></div>`;
+                    html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">`;
+                    html += `<div style="font-size: 14px; color: #666;"><strong>График результатов:</strong></div>`;
+                    html += `<button onclick="openGraphFullscreen(${idx})" style="padding: 6px 12px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 5px;">`;
+                    html += `<span>🔍</span> <span>Полный экран</span>`;
+                    html += `</button>`;
+                    html += `</div>`;
                     html += `<div id="fastResearchGraph_${idx}" style="width: 100%; height: 600px; border: 1px solid #e0e0e0; border-radius: 4px; background: white;"></div>`;
                     html += `<div id="fastResearchGraphLoading_${idx}" style="margin-top: 10px; font-size: 12px; color: #999; text-align: center;">Загрузка графика...</div>`;
                     html += `</div>`;
@@ -2163,6 +2168,142 @@
                 });
             }, 200); // Увеличиваем задержку для надежности
         }
+        
+        // Function to open graph in fullscreen modal
+        function openGraphFullscreen(graphIdx) {
+            const graphDiv = document.getElementById(`fastResearchGraph_${graphIdx}`);
+            if (!graphDiv) {
+                console.error(`Graph div fastResearchGraph_${graphIdx} not found`);
+                return;
+            }
+            
+            // Get the graph data from the rendered Plotly graph
+            const graphData = graphDiv.data;
+            const graphLayout = graphDiv.layout;
+            
+            if (!graphData || !graphLayout) {
+                console.error('Graph data not found');
+                return;
+            }
+            
+            // Create modal overlay
+            const modal = document.createElement('div');
+            modal.id = `graphModal_${graphIdx}`;
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.9);
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+                box-sizing: border-box;
+            `;
+            
+            // Create modal content
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                position: relative;
+                width: 95%;
+                height: 95%;
+                background: white;
+                border-radius: 8px;
+                padding: 20px;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+            `;
+            
+            // Create header with close button
+            const modalHeader = document.createElement('div');
+            modalHeader.style.cssText = `
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 15px;
+                padding-bottom: 10px;
+                border-bottom: 1px solid #e0e0e0;
+            `;
+            
+            const modalTitle = document.createElement('h3');
+            modalTitle.textContent = 'График результатов (полный экран)';
+            modalTitle.style.cssText = 'margin: 0; color: #333; font-size: 18px;';
+            
+            const closeButton = document.createElement('button');
+            closeButton.textContent = '✕ Закрыть';
+            closeButton.style.cssText = `
+                padding: 8px 16px;
+                background: #f44336;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 500;
+            `;
+            closeButton.onclick = () => {
+                document.body.removeChild(modal);
+            };
+            
+            // Create graph container in modal
+            const modalGraphDiv = document.createElement('div');
+            modalGraphDiv.id = `modalGraph_${graphIdx}`;
+            modalGraphDiv.style.cssText = `
+                flex: 1;
+                width: 100%;
+                min-height: 0;
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                background: white;
+            `;
+            
+            // Assemble modal
+            modalHeader.appendChild(modalTitle);
+            modalHeader.appendChild(closeButton);
+            modalContent.appendChild(modalHeader);
+            modalContent.appendChild(modalGraphDiv);
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // Close on Escape key
+            const handleEscape = (e) => {
+                if (e.key === 'Escape') {
+                    if (document.body.contains(modal)) {
+                        document.body.removeChild(modal);
+                    }
+                    document.removeEventListener('keydown', handleEscape);
+                }
+            };
+            document.addEventListener('keydown', handleEscape);
+            
+            // Render graph in modal
+            Plotly.newPlot(modalGraphDiv.id, graphData, graphLayout, {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                displaylogo: false,
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: `fast_research_fullscreen_${graphIdx}`,
+                    height: 800,
+                    width: 1600,
+                    scale: 1
+                }
+            });
+            
+            // Resize graph to fit modal
+            setTimeout(() => {
+                Plotly.Plots.resize(modalGraphDiv);
+            }, 100);
+        }
+        
+        // Make function globally accessible
+        window.openGraphFullscreen = openGraphFullscreen;
         
         async function runAutoTune() {
             const baseConfigSelect = document.getElementById('autoTuneBaseConfig');
